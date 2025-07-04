@@ -1,6 +1,6 @@
 {
   "name": "@intelligentinternet/gemini-cli-mcp-openai-bridge",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

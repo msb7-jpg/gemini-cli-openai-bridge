@@ -6,6 +6,9 @@
 
 [中文文档](https://github.com/Intelligent-Internet/gemini-cli-common-bridge/blob/main/README.zh.md)
 
+> **🎉 Built on Open Source Gemini CLI - Thanks to Google!**  
+> This project is built upon the open-source [Gemini CLI](https://github.com/google-gemini/gemini-cli) by Google. We appreciate Google's commitment to open source and their contribution to the developer community.
+
 `@intelligentinternet/gemini-cli-mcp-openai-bridge` (or `gemini-cli-bridge`) is a versatile server application designed as a powerful extension to the `gemini-cli` ecosystem. It serves two primary roles:
 
 1. **MCP Toolkit**: Exposes all built-in tools from `gemini-cli` (such as file system operations, web search powered by Gemini models, and web content understanding) through a unified MCP endpoint.

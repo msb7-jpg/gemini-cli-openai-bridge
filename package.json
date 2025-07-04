@@ -24,6 +24,7 @@
     "files": [
         "bundle/",
         "README.md",
-        "LICENSE"
+        "LICENSE",
+        "NOTICE"
     ]
 }

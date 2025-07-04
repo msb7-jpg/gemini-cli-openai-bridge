@@ -181,7 +181,7 @@ export class GeminiApiClient {
       }
 
       return {
-        role: 'function', // Gemini uses the 'function' role to hold a functionResponse
+        role: 'user', // A tool response must be in a 'user' role message for Gemini API history.
         parts: [
           {
             functionResponse: {

@@ -1,0 +1,29 @@
+{
+    "name": "@intelligentinternet/gemini-cli-mcp-openai-bridge",
+    "version": "0.0.2",
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "type": "module",
+    "private": true,
+    "repository": "Intelligent-Internet/gemini-cli-common-bridge",
+    "workspaces": [
+        "gemini-cli/packages/*"
+    ],
+    "scripts": {
+        "install": "git submodule update --init --recursive && (cd gemini-cli && npm install)",
+        "port": "rm -rf gemini-cli/packages/bridge-server && cp -r bridge-server gemini-cli/packages/ && cp LICENSE gemini-cli/packages/bridge-server/ && cp README.md gemini-cli/packages/bridge-server/ && (cd gemini-cli/packages/bridge-server && npm install)",
+        "prepare": "npm run install && npm run port",
+        "build": "npm run prepare && npm run build --workspace=@intelligentinternet/gemini-cli-mcp-openai-bridge",
+        "start": "npm start --workspace=@intelligentinternet/gemini-cli-mcp-openai-bridge --",
+        "publish:bridge-server": "cd gemini-cli/packages/bridge-server && npm publish --access public"
+    },
+    "bin": {
+        "gemini-cli-bridge": "gemini-cli/packages/bridge-server/dist/index.js"
+    },
+    "files": [
+        "bundle/",
+        "README.md",
+        "LICENSE"
+    ]
+}

@@ -1,0 +1,2630 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+src/
+  bridge/
+    bridge.ts
+    index.ts
+    openai.ts
+    stream-transformer.ts
+  config/
+    config.ts
+    extension.ts
+    sandboxConfig.ts
+    settings.ts
+  utils/
+    error-mapper.ts
+    logger.ts
+    package.ts
+    version.ts
+  gemini-client.ts
+  index.ts
+  mcp-test-client.ts
+  types.ts
+package.json
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/bridge/bridge.ts">
+import express, { Request, Response, NextFunction, Application } from 'express';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { z } from 'zod';
+import {
+  type Config,
+  type Tool as GcliTool,
+  type ToolResult,
+  GeminiChat,
+  WebFetchTool,
+  WebSearchTool,
+} from '@google/gemini-cli-core';
+import {
+  type CallToolResult,
+  isInitializeRequest,
+} from '@modelcontextprotocol/sdk/types.js';
+import {
+  type PartUnion,
+  type Tool,
+  type GenerateContentConfig,
+  type Content,
+} from '@google/genai';
+import { randomUUID } from 'node:crypto';
+import { logger } from '../utils/logger.js';
+import { type SecurityPolicy } from '../types.js'; // 引入新的类型
+
+// NEW: 定义一个安全策略错误类
+class SecurityPolicyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SecurityPolicyError';
+  }
+}
+
+export class GcliMcpBridge {
+  private readonly config: Config;
+  private readonly cliVersion: string;
+  private readonly securityPolicy: SecurityPolicy; // NEW: 存储安全策略
+  private readonly debugMode: boolean;
+  private readonly sessions: Record<
+    string,
+    { mcpServer: McpServer; transport: StreamableHTTPServerTransport }
+  > = {};
+
+  constructor(
+    config: Config,
+    cliVersion: string,
+    securityPolicy: SecurityPolicy, // NEW: 接收安全策略
+    debugMode = false,
+  ) {
+    this.config = config;
+    this.cliVersion = cliVersion;
+    this.securityPolicy = securityPolicy; // NEW: 存储策略
+    this.debugMode = debugMode;
+  }
+
+  private async createNewMcpServer(): Promise<McpServer> {
+    const server = new McpServer(
+      {
+        name: 'gemini-cli-bridge-server',
+        version: this.cliVersion,
+      },
+      {
+        capabilities: {
+          logging: {},
+          // NEW: 在 server/info 中声明安全策略
+          geminiCliSecurityPolicy: this.securityPolicy,
+        },
+      },
+    );
+    await this.registerAllGcliTools(server);
+    return server;
+  }
+
+  public async start(app: Application) {
+    app.all('/mcp', async (req: Request, res: Response) => {
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+
+      let session = sessionId ? this.sessions[sessionId] : undefined;
+
+      if (!session) {
+        if (isInitializeRequest(req.body)) {
+          logger.debug(
+            this.debugMode,
+            'Creating new session and transport for initialize request',
+          );
+
+          try {
+            const newMcpServer = await this.createNewMcpServer();
+            const newTransport = new StreamableHTTPServerTransport({
+              sessionIdGenerator: () => randomUUID(),
+              onsessioninitialized: newSessionId => {
+                logger.debug(
+                  this.debugMode,
+                  `Session initialized: ${newSessionId}`,
+                );
+                this.sessions[newSessionId] = {
+                  mcpServer: newMcpServer,
+                  transport: newTransport,
+                };
+              },
+            });
+
+            newTransport.onclose = () => {
+              const sid = newTransport.sessionId;
+              if (sid && this.sessions[sid]) {
+                logger.debug(
+                  this.debugMode,
+                  `Session ${sid} closed, removing session object.`,
+                );
+                delete this.sessions[sid];
+              }
+            };
+
+            await newMcpServer.connect(newTransport);
+
+            session = { mcpServer: newMcpServer, transport: newTransport };
+          } catch (e) {
+            // Handle errors during server creation
+            logger.error('Error creating new MCP session:', e);
+            if (!res.headersSent) {
+              res.status(500).json({ error: 'Failed to create session' });
+            }
+            return;
+          }
+        } else {
+          logger.error(
+            'Bad Request: Missing session ID for non-initialize request.',
+          );
+          res.status(400).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'Bad Request: Mcp-Session-Id header is required',
+            },
+            id: null,
+          });
+          return;
+        }
+      } else {
+        logger.debug(
+          this.debugMode,
+          `Reusing transport and server for session: ${sessionId}`,
+        );
+      }
+
+      try {
+        await session.transport.handleRequest(req, res, req.body);
+      } catch (e) {
+        logger.error('Error handling request:', e);
+        if (!res.headersSent) {
+          res.status(500).end();
+        }
+      }
+    });
+  }
+
+  private async registerAllGcliTools(mcpServer: McpServer) {
+    const toolRegistry = await this.config.getToolRegistry();
+    const allTools = toolRegistry.getAllTools();
+
+    let toolsToRegister = allTools;
+
+    switch (this.securityPolicy.mode) {
+      case 'read-only':
+        toolsToRegister = allTools.filter(tool =>
+          this.isReadOnlyTool(tool.name),
+        );
+        logger.info(
+          'Operating in read-only mode. Allowed tools:',
+          toolsToRegister.map(t => t.name),
+        );
+        break;
+      case 'restricted':
+        if (this.securityPolicy.allowedTools) {
+          const allowedSet = new Set(this.securityPolicy.allowedTools);
+          toolsToRegister = allTools.filter(tool => allowedSet.has(tool.name));
+          logger.info(
+            'Operating in restricted mode. Allowed tools:',
+            toolsToRegister.map(t => t.name),
+          );
+        } else {
+          logger.warn(
+            'Restricted mode enabled, but no allowedTools specified. No tools will be available.',
+          );
+          toolsToRegister = [];
+        }
+        break;
+      case 'yolo':
+      default:
+        logger.info('Operating in YOLO mode. All tools are available.');
+        toolsToRegister = allTools;
+        break;
+    }
+
+    for (const tool of toolsToRegister) {
+      this.registerGcliTool(tool, mcpServer);
+    }
+  }
+
+  // NEW: 辅助方法，用于判断工具是否为只读
+  private isReadOnlyTool(toolName: string): boolean {
+    const readOnlyTools = [
+      'read_file',
+      'list_directory',
+      'glob',
+      'search_file_content',
+      'google_web_search',
+      'web_fetch',
+    ];
+    return readOnlyTools.includes(toolName);
+  }
+
+  // NEW: 辅助方法，用于检查 shell 命令是否被允许
+  private isShellCommandAllowed(command: string): boolean {
+    if (this.securityPolicy.mode === 'yolo') {
+      return true;
+    }
+    if (!this.securityPolicy.shellCommandPolicy) {
+      // 在 restricted 模式下，如果没有定义 shell 策略，则默认拒绝
+      return false;
+    }
+
+    const { allow, deny } = this.securityPolicy.shellCommandPolicy;
+    const normalizedCommand = command.trim().replace(/\s+/g, ' ');
+
+    // 检查黑名单
+    if (deny?.some(deniedCmd => normalizedCommand.startsWith(deniedCmd))) {
+      return false;
+    }
+
+    // 如果定义了白名单，则必须匹配
+    if (allow && allow.length > 0) {
+      return allow.some(allowedCmd =>
+        normalizedCommand.startsWith(allowedCmd),
+      );
+    }
+
+    // 如果没有定义白名单，但有黑名单，则只要不匹配黑名单就允许
+    if (deny) {
+      return true;
+    }
+
+    // 默认拒绝
+    return false;
+  }
+
+  private registerGcliTool(tool: GcliTool, mcpServer: McpServer) {
+    let toolInstanceForExecution = tool;
+    let finalDescription = tool.description;
+
+    // For web tools, check if a custom model is specified via environment variable.
+    // If so, create a new tool instance with a proxied config to use that model.
+    if (tool.name === 'google_web_search' || tool.name === 'web_fetch') {
+      const toolModel = process.env.GEMINI_TOOLS_DEFAULT_MODEL;
+
+      if (toolModel) {
+        logger.debug(
+          this.debugMode,
+          `Using custom model "${toolModel}" for tool "${tool.name}"`,
+        );
+
+        // Create a proxy for this.config to override getModel.
+        const proxyConfig = new Proxy(this.config, {
+          get: (target, prop, receiver) => {
+            if (prop === 'getModel') {
+              return () => toolModel;
+            }
+            return Reflect.get(target, prop, receiver);
+          },
+        }) as Config;
+
+        // Create a new tool instance with the proxied config.
+        if (tool.name === 'google_web_search') {
+          toolInstanceForExecution = new WebSearchTool(proxyConfig);
+        } else {
+          toolInstanceForExecution = new WebFetchTool(proxyConfig);
+        }
+      }
+    }
+
+    // NEW: 动态修改 run_shell_command 的描述
+    if (
+      tool.name === 'run_shell_command' &&
+      this.securityPolicy.mode !== 'yolo' &&
+      this.securityPolicy.shellCommandPolicy
+    ) {
+      const { allow, deny } = this.securityPolicy.shellCommandPolicy;
+      let policyDescription = '\n\n**Security Policy Note:**';
+      if (allow && allow.length > 0) {
+        policyDescription += `\n- Only the following command prefixes are allowed: \`${allow.join(
+          '`, `',
+        )}\`.`;
+      } else {
+        policyDescription += `\n- All shell commands are denied unless explicitly allowed. No commands are currently allowed.`;
+      }
+      if (deny && deny.length > 0) {
+        policyDescription += `\n- The following command prefixes are explicitly denied: \`${deny.join(
+          '`, `',
+        )}\`.`;
+      }
+      finalDescription += policyDescription;
+    }
+
+    mcpServer.registerTool(
+      tool.name,
+      {
+        title: tool.displayName,
+        description: finalDescription,
+        inputSchema: this.convertJsonSchemaToZod(tool.schema.parameters),
+      },
+      async (
+        args: Record<string, unknown>,
+        extra: { signal: AbortSignal },
+      ) => {
+        // NEW: 在执行前进行安全检查
+        if (tool.name === 'run_shell_command') {
+          const commandToRun = (args as { command: string }).command;
+          if (!this.isShellCommandAllowed(commandToRun)) {
+            throw new SecurityPolicyError(
+              `Command "${commandToRun}" is denied by the security policy.`,
+            );
+          }
+        }
+
+        const startTime = Date.now();
+        logger.info('MCP tool call started', { toolName: tool.name, args });
+        try {
+          // toolInstanceForExecution is either the original tool or a new instance with a custom model config.
+          const result = await toolInstanceForExecution.execute(
+            args,
+            extra.signal,
+          );
+          const durationMs = Date.now() - startTime;
+          logger.info('MCP tool call finished', {
+            toolName: tool.name,
+            status: 'success',
+            durationMs,
+          });
+          return this.convertGcliResultToMcpResult(result);
+        } catch (e) {
+          const durationMs = Date.now() - startTime;
+          logger.error('MCP tool call failed', e as Error, {
+            toolName: tool.name,
+            durationMs,
+          });
+          // Re-throw the error to be handled by the MCP SDK.
+          throw e;
+        }
+      },
+    );
+  }
+
+
+  private convertJsonSchemaToZod(jsonSchema: any): any {
+    // Helper to convert a single JSON schema property to a Zod type.
+    // This is defined as an inner arrow function to recursively call itself for arrays
+    // and to call the outer function for nested objects via `this`.
+    const convertProperty = (prop: any): z.ZodTypeAny => {
+      if (!prop || !prop.type) {
+        return z.any();
+      }
+
+      switch (prop.type) {
+        case 'string':
+          return z.string().describe(prop.description || '');
+        case 'number':
+          return z.number().describe(prop.description || '');
+        case 'boolean':
+          return z.boolean().describe(prop.description || '');
+        case 'array':
+          // Recursively call the converter for `items`.
+          if (!prop.items) {
+            // A valid array schema MUST have `items`. Fallback to `any` if missing.
+            return z.array(z.any()).describe(prop.description || '');
+          }
+          return z
+            .array(convertProperty(prop.items))
+            .describe(prop.description || '');
+        case 'object':
+          // For nested objects, recursively call the main function to get the shape.
+          return z
+            .object(this.convertJsonSchemaToZod(prop))
+            .passthrough()
+            .describe(prop.description || '');
+        default:
+          return z.any();
+      }
+    };
+
+    if (!jsonSchema || !jsonSchema.properties) {
+      return {};
+    }
+
+    const shape: any = {};
+    for (const [key, prop] of Object.entries(jsonSchema.properties)) {
+      let fieldSchema = convertProperty(prop as any);
+
+      if (!jsonSchema.required || !jsonSchema.required.includes(key)) {
+        fieldSchema = fieldSchema.optional();
+      }
+      shape[key] = fieldSchema;
+    }
+    return shape;
+  }
+
+  private convertGcliResultToMcpResult(
+    gcliResult: ToolResult,
+  ): CallToolResult {
+    if (typeof gcliResult.llmContent === 'string') {
+      return { content: [{ type: 'text', text: gcliResult.llmContent }] };
+    }
+
+    const parts = Array.isArray(gcliResult.llmContent)
+      ? gcliResult.llmContent
+      : [gcliResult.llmContent];
+
+    const contentBlocks = parts.map((part: PartUnion) => {
+      if (typeof part === 'string') {
+        return { type: 'text' as const, text: part };
+      }
+      if ('text' in part && part.text) {
+        return { type: 'text' as const, text: part.text };
+      }
+      return { type: 'text' as const, text: '[Unsupported Part Type]' };
+    });
+
+    return { content: contentBlocks };
+  }
+}
+</file>
+
+<file path="src/bridge/index.ts">
+export { GcliMcpBridge } from './bridge.js';
+</file>
+
+<file path="src/bridge/openai.ts">
+import { Router, Request, Response } from 'express';
+import { type Config } from '@google/gemini-cli-core';
+import { createOpenAIStreamTransformer } from './stream-transformer.js';
+import { GeminiApiClient } from '../gemini-client.js';
+import {
+  type OpenAIChatCompletionRequest,
+  type OpenAIChatCompletion,
+  type OpenAIChatCompletionMessage,
+  type OpenAIChatCompletionChoice,
+  type OpenAIToolCall,
+} from '../types.js';
+import { mapErrorToOpenAIError } from '../utils/error-mapper.js';
+import { logger } from '../utils/logger.js';
+import { randomUUID } from 'node:crypto';
+
+export function createOpenAIRouter(config: Config, debugMode = false): Router {
+  const router = Router();
+
+  // Middleware: Add a requestId to each request.
+  router.use((req, res, next) => {
+    (req as any).requestId = randomUUID();
+    next();
+  });
+
+  router.post('/chat/completions', async (req: Request, res: Response) => {
+    const requestId = (req as any).requestId;
+    const startTime = Date.now();
+    try {
+      const body = req.body as OpenAIChatCompletionRequest;
+
+      logger.info('OpenAI bridge request received', {
+        requestId,
+        model: body.model,
+        stream: body.stream,
+      });
+      logger.debug(debugMode, 'Request body:', { requestId, body });
+      const stream = body.stream !== false;
+
+      const client = new GeminiApiClient(config, debugMode);
+
+      const geminiStream = await client.sendMessageStream({
+        model: body.model,
+        messages: body.messages,
+        tools: body.tools,
+        tool_choice: body.tool_choice,
+      });
+
+      if (stream) {
+        // --- Streaming Response ---
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+
+        const openAIStream = createOpenAIStreamTransformer(
+          body.model,
+          debugMode,
+        );
+
+        // --- Core streaming logic ---
+        // Create a ReadableStream to wrap our Gemini event stream.
+        const readableStream = new ReadableStream({
+          async start(controller) {
+            for await (const value of geminiStream) {
+              controller.enqueue(value);
+            }
+            controller.close();
+          },
+        });
+
+        // Pipe our stream through the transformer.
+        const transformedStream = readableStream.pipeThrough(openAIStream);
+        const reader = transformedStream.getReader();
+
+        // Manually read each transformed chunk and write it to the response immediately.
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+            res.write(value);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+        // --- End of core streaming logic ---
+
+        const durationMs = Date.now() - startTime;
+        logger.info('OpenAI bridge request finished', {
+          requestId,
+          status: 'success',
+          durationMs,
+        });
+        res.end();
+      } else {
+        // --- Non-streaming logic ---
+
+        let fullTextContent = '';
+        const toolCalls: OpenAIToolCall[] = [];
+        let finishReason: OpenAIChatCompletionChoice['finish_reason'] = 'stop';
+
+        // 1. In-server aggregation of all stream chunks
+        for await (const chunk of geminiStream) {
+          if (chunk.type === 'text' && chunk.data) {
+            fullTextContent += chunk.data;
+          } else if (chunk.type === 'tool_code' && chunk.data) {
+            const toolCallId = `call_${chunk.data.name}_${randomUUID()}`;
+            toolCalls.push({
+              id: toolCallId,
+              type: 'function',
+              function: {
+                name: chunk.data.name,
+                arguments: JSON.stringify(chunk.data.args),
+              },
+            });
+          }
+        }
+
+        // 2. Determine finish_reason based on aggregated results
+        if (toolCalls.length > 0) {
+          finishReason = 'tool_calls';
+        }
+
+        // 3. Construct the complete OpenAI response object
+        const assistantMessage: OpenAIChatCompletionMessage = {
+          role: 'assistant',
+          content: fullTextContent || null, // content is null if only tool calls are present
+        };
+
+        if (toolCalls.length > 0) {
+          assistantMessage.tool_calls = toolCalls;
+        }
+
+        const finalResponse: OpenAIChatCompletion = {
+          id: `chatcmpl-${randomUUID()}`,
+          object: 'chat.completion',
+          created: Math.floor(startTime / 1000),
+          model: body.model,
+          choices: [
+            {
+              index: 0,
+              message: assistantMessage,
+              finish_reason: finishReason,
+            },
+          ],
+          // usage is omitted as it's not available from Gemini streaming response.
+        };
+
+        const durationMs = Date.now() - startTime;
+        logger.info('OpenAI bridge non-streaming request finished', {
+          requestId,
+          status: 'success',
+          durationMs,
+        });
+
+        // 4. Send the JSON response
+        res.status(200).json(finalResponse);
+      }
+    } catch (e: unknown) {
+      const durationMs = Date.now() - startTime;
+      logger.error('OpenAI bridge request failed', e as Error, {
+        requestId,
+        durationMs,
+      });
+
+      // 调用新的错误映射函数
+      const { openAIError, statusCode } = mapErrorToOpenAIError(e);
+
+      if (!res.headersSent) {
+        res.status(statusCode).json(openAIError);
+      } else {
+        // If headers are already sent, we can't change the status code,
+        // but we can send an error in the stream.
+        res.write(`data: ${JSON.stringify({ error: openAIError.error })}\n\n`);
+        res.end();
+      }
+    }
+  });
+
+  // The /v1/models endpoint can be added here.
+  router.get('/models', (req, res) => {
+    // This can return a fixed list of models or get them from the config.
+    res.json({
+      object: 'list',
+      data: [
+        { id: 'gemini-2.5-pro', object: 'model', owned_by: 'google' },
+        { id: 'gemini-2.5-flash', object: 'model', owned_by: 'google' },
+      ],
+    });
+  });
+
+  return router;
+}
+</file>
+
+<file path="src/bridge/stream-transformer.ts">
+import { randomUUID } from 'node:crypto';
+import { type StreamChunk } from '../types.js';
+
+// --- OpenAI Response Interfaces ---
+interface OpenAIDelta {
+  role?: 'assistant';
+  content?: string | null;
+  tool_calls?: {
+    index: number;
+    id: string;
+    type: 'function';
+    function: {
+      name?: string;
+      arguments?: string;
+    };
+  }[];
+}
+
+interface OpenAIChunk {
+  id: string;
+  object: 'chat.completion.chunk';
+  created: number;
+  model: string;
+  choices: {
+    index: number;
+    delta: OpenAIDelta;
+    finish_reason: string | null;
+  }[];
+}
+
+// --- New Stateful Transformer ---
+export function createOpenAIStreamTransformer(
+  model: string,
+  debugMode = false,
+): TransformStream<StreamChunk, Uint8Array> {
+  const chatID = `chatcmpl-${randomUUID()}`;
+  const creationTime = Math.floor(Date.now() / 1000);
+  const encoder = new TextEncoder();
+  let isFirstChunk = true;
+  let toolCallIndex = 0;
+
+  const createChunk = (
+    delta: OpenAIDelta,
+    finish_reason: string | null = null,
+  ): OpenAIChunk => ({
+    id: chatID,
+    object: 'chat.completion.chunk',
+    created: creationTime,
+    model: model,
+    choices: [
+      {
+        index: 0,
+        delta,
+        finish_reason,
+      },
+    ],
+  });
+
+  const enqueueChunk = (
+    controller: TransformStreamDefaultController<Uint8Array>,
+    chunk: OpenAIChunk,
+  ) => {
+    const sseString = `data: ${JSON.stringify(chunk)}\n\n`;
+    controller.enqueue(encoder.encode(sseString));
+  };
+
+  return new TransformStream({
+    transform(chunk: StreamChunk, controller) {
+      if (debugMode) {
+        console.log(
+          `[Stream Transformer] Received chunk: ${chunk.type}`,
+          chunk.data ? JSON.stringify(chunk.data) : '',
+        );
+      }
+      let delta: OpenAIDelta = {};
+
+      if (isFirstChunk) {
+        delta.role = 'assistant';
+        isFirstChunk = false;
+      }
+
+      switch (chunk.type) {
+        case 'text':
+          if (chunk.data) {
+            delta.content = chunk.data;
+            enqueueChunk(controller, createChunk(delta));
+          }
+          break;
+
+        case 'tool_code': {
+          const { name, args } = chunk.data;
+          // IMPORTANT: Embed the function name in the ID so it can be parsed when a tool response is received.
+          const toolCallId = `call_${name}_${randomUUID()}`;
+
+          // OpenAI streaming tool calls need to be sent in chunks.
+          // 1. Send the chunk containing the function name.
+          const nameDelta: OpenAIDelta = {
+            ...delta, // Include role if it's the first chunk
+            tool_calls: [
+              {
+                index: toolCallIndex,
+                id: toolCallId,
+                type: 'function',
+                function: { name: name, arguments: '' },
+              },
+            ],
+          };
+          enqueueChunk(controller, createChunk(nameDelta));
+
+          // 2. Send the chunk containing the arguments.
+          const argsDelta: OpenAIDelta = {
+            tool_calls: [
+              {
+                index: toolCallIndex,
+                id: toolCallId,
+                type: 'function',
+                function: { arguments: JSON.stringify(args) },
+              },
+            ],
+          };
+          enqueueChunk(controller, createChunk(argsDelta));
+
+          toolCallIndex++;
+          break;
+        }
+
+        case 'reasoning':
+          // These events currently have no direct equivalent in the OpenAI format and can be ignored or logged.
+          if (debugMode) {
+            console.log(`[Stream Transformer] Ignoring chunk: ${chunk.type}`);
+          }
+          break;
+      }
+    },
+
+    flush(controller) {
+      // At the end of the stream, send a finish_reason of 'tool_calls' or 'stop'.
+      const finish_reason = toolCallIndex > 0 ? 'tool_calls' : 'stop';
+      enqueueChunk(controller, createChunk({}, finish_reason));
+
+      const doneString = `data: [DONE]\n\n`;
+      controller.enqueue(encoder.encode(doneString));
+    },
+  });
+}
+</file>
+
+<file path="src/config/config.ts">
+/**
+ * @license
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import {
+  Config,
+  loadServerHierarchicalMemory,
+  setGeminiMdFilename as setServerGeminiMdFilename,
+  getCurrentGeminiMdFilename,
+  ApprovalMode,
+  GEMINI_CONFIG_DIR as GEMINI_DIR,
+  DEFAULT_GEMINI_FLASH_MODEL,
+  DEFAULT_GEMINI_EMBEDDING_MODEL,
+  FileDiscoveryService,
+  TelemetryTarget,
+} from '@google/gemini-cli-core';
+import { Settings } from './settings.js';
+
+import { Extension } from './extension.js';
+import * as dotenv from 'dotenv';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { loadSandboxConfig } from './sandboxConfig.js';
+
+// Simple console logger for now - replace with actual logger if available
+const logger = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  debug: (...args: any[]) => console.debug('[DEBUG]', ...args),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  warn: (...args: any[]) => console.warn('[WARN]', ...args),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  error: (...args: any[]) => console.error('[ERROR]', ...args),
+};
+
+// This function is now a thin wrapper around the server's implementation.
+// It's kept in the CLI for now as App.tsx directly calls it for memory refresh.
+// TODO: Consider if App.tsx should get memory via a server call or if Config should refresh itself.
+export async function loadHierarchicalGeminiMemory(
+  currentWorkingDirectory: string,
+  debugMode: boolean,
+  fileService: FileDiscoveryService,
+  extensionContextFilePaths: string[] = [],
+): Promise<{ memoryContent: string; fileCount: number }> {
+  if (debugMode) {
+    logger.debug(
+      `CLI: Delegating hierarchical memory load to server for CWD: ${currentWorkingDirectory}`,
+    );
+  }
+  // Directly call the server function.
+  // The server function will use its own homedir() for the global path.
+  return loadServerHierarchicalMemory(
+    currentWorkingDirectory,
+    debugMode,
+    fileService,
+    extensionContextFilePaths,
+  );
+}
+
+export async function loadServerConfig(
+  settings: Settings,
+  extensions: Extension[],
+  sessionId: string,
+  debugMode: boolean,
+  loadInternalPrompt: boolean,
+  toolsModel?: string, // <-- New parameter
+): Promise<Config> {
+  loadEnvironment();
+
+  // Set the context filename in the server's memoryTool module BEFORE loading memory
+  // TODO(b/343434939): This is a bit of a hack. The contextFileName should ideally be passed
+  // directly to the Config constructor in core, and have core handle setGeminiMdFilename.
+  // However, loadHierarchicalGeminiMemory is called *before* createServerConfig.
+  if (settings.contextFileName) {
+    setServerGeminiMdFilename(settings.contextFileName);
+  } else {
+    // Reset to default if not provided in settings.
+    setServerGeminiMdFilename(getCurrentGeminiMdFilename());
+  }
+
+  const extensionContextFilePaths = extensions.flatMap((e) => e.contextFiles);
+
+  const fileService = new FileDiscoveryService(process.cwd());
+  // Call the (now wrapper) loadHierarchicalGeminiMemory which calls the server's version
+  let memoryContent = '';
+  let fileCount = 0;
+
+  if (loadInternalPrompt) {
+    const memoryResult = await loadHierarchicalGeminiMemory(
+      process.cwd(),
+      debugMode,
+      fileService,
+      extensionContextFilePaths,
+    );
+    memoryContent = memoryResult.memoryContent;
+    fileCount = memoryResult.fileCount;
+  }
+
+  const mcpServers = mergeMcpServers(settings, extensions);
+
+  const sandboxConfig = await loadSandboxConfig(settings, {});
+
+  // Priority: CLI arg > env var > fallback env var > default
+  const model =
+    toolsModel ||
+    process.env.GEMINI_TOOLS_DEFAULT_MODEL ||
+    process.env.GEMINI_MODEL ||
+    DEFAULT_GEMINI_FLASH_MODEL;
+
+  return new Config({
+    sessionId,
+    embeddingModel: DEFAULT_GEMINI_EMBEDDING_MODEL,
+    sandbox: sandboxConfig,
+    targetDir: process.cwd(),
+    debugMode,
+    question: undefined,
+    fullContext: false,
+    coreTools: settings.coreTools || undefined,
+    excludeTools: settings.excludeTools || undefined,
+    toolDiscoveryCommand: settings.toolDiscoveryCommand,
+    toolCallCommand: settings.toolCallCommand,
+    mcpServerCommand: settings.mcpServerCommand,
+    mcpServers,
+    userMemory: memoryContent,
+    geminiMdFileCount: fileCount,
+    approvalMode: ApprovalMode.YOLO,
+    showMemoryUsage: settings.showMemoryUsage || false,
+    accessibility: settings.accessibility,
+    telemetry: {
+      enabled: settings.telemetry?.enabled,
+      target: settings.telemetry?.target as TelemetryTarget,
+      otlpEndpoint:
+        process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??
+        settings.telemetry?.otlpEndpoint,
+      logPrompts: settings.telemetry?.logPrompts,
+    },
+    usageStatisticsEnabled: settings.usageStatisticsEnabled ?? true,
+    // Git-aware file filtering settings
+    fileFiltering: {
+      respectGitIgnore: settings.fileFiltering?.respectGitIgnore,
+      enableRecursiveFileSearch:
+        settings.fileFiltering?.enableRecursiveFileSearch,
+    },
+    checkpointing: settings.checkpointing?.enabled,
+    proxy:
+      process.env.HTTPS_PROXY ||
+      process.env.https_proxy ||
+      process.env.HTTP_PROXY ||
+      process.env.http_proxy,
+    cwd: process.cwd(),
+    fileDiscoveryService: fileService,
+    bugCommand: settings.bugCommand,
+    model: model, // <-- Use the new model selection logic
+    extensionContextFilePaths,
+  });
+}
+
+function mergeMcpServers(settings: Settings, extensions: Extension[]) {
+  const mcpServers = { ...(settings.mcpServers || {}) };
+  for (const extension of extensions) {
+    Object.entries(extension.config.mcpServers || {}).forEach(
+      ([key, server]) => {
+        if (mcpServers[key]) {
+          logger.warn(
+            `Skipping extension MCP config for server with key "${key}" as it already exists.`,
+          );
+          return;
+        }
+        mcpServers[key] = server;
+      },
+    );
+  }
+  return mcpServers;
+}
+function findEnvFile(startDir: string): string | null {
+  let currentDir = path.resolve(startDir);
+  while (true) {
+    // prefer gemini-specific .env under GEMINI_DIR
+    const geminiEnvPath = path.join(currentDir, GEMINI_DIR, '.env');
+    if (fs.existsSync(geminiEnvPath)) {
+      return geminiEnvPath;
+    }
+    const envPath = path.join(currentDir, '.env');
+    if (fs.existsSync(envPath)) {
+      return envPath;
+    }
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir || !parentDir) {
+      // check .env under home as fallback, again preferring gemini-specific .env
+      const homeGeminiEnvPath = path.join(os.homedir(), GEMINI_DIR, '.env');
+      if (fs.existsSync(homeGeminiEnvPath)) {
+        return homeGeminiEnvPath;
+      }
+      const homeEnvPath = path.join(os.homedir(), '.env');
+      if (fs.existsSync(homeEnvPath)) {
+        return homeEnvPath;
+      }
+      return null;
+    }
+    currentDir = parentDir;
+  }
+}
+
+export function loadEnvironment(): void {
+  const envFilePath = findEnvFile(process.cwd());
+  if (envFilePath) {
+    dotenv.config({ path: envFilePath, quiet: true });
+  }
+}
+</file>
+
+<file path="src/config/extension.ts">
+/**
+ * @license
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { MCPServerConfig } from '@google/gemini-cli-core';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
+export const EXTENSIONS_DIRECTORY_NAME = path.join('.gemini', 'extensions');
+export const EXTENSIONS_CONFIG_FILENAME = 'gemini-extension.json';
+
+export interface Extension {
+  config: ExtensionConfig;
+  contextFiles: string[];
+}
+
+export interface ExtensionConfig {
+  name: string;
+  version: string;
+  mcpServers?: Record<string, MCPServerConfig>;
+  contextFileName?: string | string[];
+}
+
+export function loadExtensions(workspaceDir: string): Extension[] {
+  const allExtensions = [
+    ...loadExtensionsFromDir(workspaceDir),
+    ...loadExtensionsFromDir(os.homedir()),
+  ];
+
+  const uniqueExtensions: Extension[] = [];
+  const seenNames = new Set<string>();
+  for (const extension of allExtensions) {
+    if (!seenNames.has(extension.config.name)) {
+      console.log(
+        `Loading extension: ${extension.config.name} (version: ${extension.config.version})`,
+      );
+      uniqueExtensions.push(extension);
+      seenNames.add(extension.config.name);
+    }
+  }
+
+  return uniqueExtensions;
+}
+
+function loadExtensionsFromDir(dir: string): Extension[] {
+  const extensionsDir = path.join(dir, EXTENSIONS_DIRECTORY_NAME);
+  if (!fs.existsSync(extensionsDir)) {
+    return [];
+  }
+
+  const extensions: Extension[] = [];
+  for (const subdir of fs.readdirSync(extensionsDir)) {
+    const extensionDir = path.join(extensionsDir, subdir);
+
+    const extension = loadExtension(extensionDir);
+    if (extension != null) {
+      extensions.push(extension);
+    }
+  }
+  return extensions;
+}
+
+function loadExtension(extensionDir: string): Extension | null {
+  if (!fs.statSync(extensionDir).isDirectory()) {
+    console.error(
+      `Warning: unexpected file ${extensionDir} in extensions directory.`,
+    );
+    return null;
+  }
+
+  const configFilePath = path.join(extensionDir, EXTENSIONS_CONFIG_FILENAME);
+  if (!fs.existsSync(configFilePath)) {
+    console.error(
+      `Warning: extension directory ${extensionDir} does not contain a config file ${configFilePath}.`,
+    );
+    return null;
+  }
+
+  try {
+    const configContent = fs.readFileSync(configFilePath, 'utf-8');
+    const config = JSON.parse(configContent) as ExtensionConfig;
+    if (!config.name || !config.version) {
+      console.error(
+        `Invalid extension config in ${configFilePath}: missing name or version.`,
+      );
+      return null;
+    }
+
+    const contextFiles = getContextFileNames(config)
+      .map((contextFileName) => path.join(extensionDir, contextFileName))
+      .filter((contextFilePath) => fs.existsSync(contextFilePath));
+
+    return {
+      config,
+      contextFiles,
+    };
+  } catch (e) {
+    console.error(
+      `Warning: error parsing extension config in ${configFilePath}: ${e}`,
+    );
+    return null;
+  }
+}
+
+function getContextFileNames(config: ExtensionConfig): string[] {
+  if (!config.contextFileName) {
+    return ['GEMINI.md'];
+  } else if (!Array.isArray(config.contextFileName)) {
+    return [config.contextFileName];
+  }
+  return config.contextFileName;
+}
+</file>
+
+<file path="src/config/sandboxConfig.ts">
+/**
+ * @license
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { SandboxConfig } from '@google/gemini-cli-core';
+import commandExists from 'command-exists';
+import * as os from 'node:os';
+import { getPackageJson } from '../utils/package.js';
+import { Settings } from './settings.js';
+
+// This is a stripped-down version of the CliArgs interface from config.ts
+// to avoid circular dependencies.
+interface SandboxCliArgs {
+  sandbox?: boolean | string;
+  'sandbox-image'?: string;
+}
+
+const VALID_SANDBOX_COMMANDS: ReadonlyArray<SandboxConfig['command']> = [
+  'docker',
+  'podman',
+  'sandbox-exec',
+];
+
+function isSandboxCommand(value: string): value is SandboxConfig['command'] {
+  return (VALID_SANDBOX_COMMANDS as readonly string[]).includes(value);
+}
+
+function getSandboxCommand(
+  sandbox?: boolean | string,
+): SandboxConfig['command'] | '' {
+  // If the SANDBOX env var is set, we're already inside the sandbox.
+  if (process.env.SANDBOX) {
+    return '';
+  }
+
+  // note environment variable takes precedence over argument (from command line or settings)
+  const environmentConfiguredSandbox =
+    process.env.GEMINI_SANDBOX?.toLowerCase().trim() ?? '';
+  sandbox =
+    environmentConfiguredSandbox?.length > 0
+      ? environmentConfiguredSandbox
+      : sandbox;
+  if (sandbox === '1' || sandbox === 'true') sandbox = true;
+  else if (sandbox === '0' || sandbox === 'false' || !sandbox) sandbox = false;
+
+  if (sandbox === false) {
+    return '';
+  }
+
+  if (typeof sandbox === 'string' && sandbox) {
+    if (!isSandboxCommand(sandbox)) {
+      console.error(
+        `ERROR: invalid sandbox command '${sandbox}'. Must be one of ${VALID_SANDBOX_COMMANDS.join(
+          ', ',
+        )}`,
+      );
+      process.exit(1);
+    }
+    // confirm that specified command exists
+    if (commandExists.sync(sandbox)) {
+      return sandbox;
+    }
+    console.error(
+      `ERROR: missing sandbox command '${sandbox}' (from GEMINI_SANDBOX)`,
+    );
+    process.exit(1);
+  }
+
+  // look for seatbelt, docker, or podman, in that order
+  // for container-based sandboxing, require sandbox to be enabled explicitly
+  if (os.platform() === 'darwin' && commandExists.sync('sandbox-exec')) {
+    return 'sandbox-exec';
+  } else if (commandExists.sync('docker') && sandbox === true) {
+    return 'docker';
+  } else if (commandExists.sync('podman') && sandbox === true) {
+    return 'podman';
+  }
+
+  // throw an error if user requested sandbox but no command was found
+  if (sandbox === true) {
+    console.error(
+      'ERROR: GEMINI_SANDBOX is true but failed to determine command for sandbox; ' +
+        'install docker or podman or specify command in GEMINI_SANDBOX',
+    );
+    process.exit(1);
+  }
+
+  return '';
+}
+
+export async function loadSandboxConfig(
+  settings: Settings,
+  argv: SandboxCliArgs,
+): Promise<SandboxConfig | undefined> {
+  const sandboxOption = argv.sandbox ?? settings.sandbox;
+  const command = getSandboxCommand(sandboxOption);
+
+  const packageJson = await getPackageJson();
+  const image =
+    argv['sandbox-image'] ??
+    process.env.GEMINI_SANDBOX_IMAGE ??
+    packageJson?.config?.sandboxImageUri;
+
+  return command && image ? { command, image } : undefined;
+}
+</file>
+
+<file path="src/config/settings.ts">
+/**
+ * @license
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { homedir } from 'os';
+import {
+  MCPServerConfig,
+  getErrorMessage,
+  BugCommandSettings,
+  TelemetrySettings,
+  AuthType,
+} from '@google/gemini-cli-core';
+import stripJsonComments from 'strip-json-comments';
+
+export const SETTINGS_DIRECTORY_NAME = '.gemini';
+export const USER_SETTINGS_DIR = path.join(homedir(), SETTINGS_DIRECTORY_NAME);
+export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, 'settings.json');
+
+export enum SettingScope {
+  User = 'User',
+  Workspace = 'Workspace',
+}
+
+export interface CheckpointingSettings {
+  enabled?: boolean;
+}
+
+export interface AccessibilitySettings {
+  disableLoadingPhrases?: boolean;
+}
+
+export interface Settings {
+  theme?: string;
+  selectedAuthType?: AuthType;
+  sandbox?: boolean | string;
+  coreTools?: string[];
+  excludeTools?: string[];
+  toolDiscoveryCommand?: string;
+  toolCallCommand?: string;
+  mcpServerCommand?: string;
+  mcpServers?: Record<string, MCPServerConfig>;
+  showMemoryUsage?: boolean;
+  contextFileName?: string | string[];
+  accessibility?: AccessibilitySettings;
+  telemetry?: TelemetrySettings;
+  usageStatisticsEnabled?: boolean;
+  preferredEditor?: string;
+  bugCommand?: BugCommandSettings;
+  checkpointing?: CheckpointingSettings;
+  autoConfigureMaxOldSpaceSize?: boolean;
+
+  // Git-aware file filtering settings
+  fileFiltering?: {
+    respectGitIgnore?: boolean;
+    enableRecursiveFileSearch?: boolean;
+  };
+
+  // UI setting. Does not display the ANSI-controlled terminal title.
+  hideWindowTitle?: boolean;
+  hideTips?: boolean;
+
+  // Add other settings here.
+}
+
+export interface SettingsError {
+  message: string;
+  path: string;
+}
+
+export interface SettingsFile {
+  settings: Settings;
+  path: string;
+}
+export class LoadedSettings {
+  constructor(
+    user: SettingsFile,
+    workspace: SettingsFile,
+    errors: SettingsError[],
+  ) {
+    this.user = user;
+    this.workspace = workspace;
+    this.errors = errors;
+    this._merged = this.computeMergedSettings();
+  }
+
+  readonly user: SettingsFile;
+  readonly workspace: SettingsFile;
+  readonly errors: SettingsError[];
+
+  private _merged: Settings;
+
+  get merged(): Settings {
+    return this._merged;
+  }
+
+  private computeMergedSettings(): Settings {
+    return {
+      ...this.user.settings,
+      ...this.workspace.settings,
+    };
+  }
+
+  forScope(scope: SettingScope): SettingsFile {
+    switch (scope) {
+      case SettingScope.User:
+        return this.user;
+      case SettingScope.Workspace:
+        return this.workspace;
+      default:
+        throw new Error(`Invalid scope: ${scope}`);
+    }
+  }
+
+  setValue(
+    scope: SettingScope,
+    key: keyof Settings,
+    value: string | Record<string, MCPServerConfig> | undefined,
+  ): void {
+    const settingsFile = this.forScope(scope);
+    // @ts-expect-error - value can be string | Record<string, MCPServerConfig>
+    settingsFile.settings[key] = value;
+    this._merged = this.computeMergedSettings();
+    saveSettings(settingsFile);
+  }
+}
+
+function resolveEnvVarsInString(value: string): string {
+  const envVarRegex = /\$(?:(\w+)|{([^}]+)})/g; // Find $VAR_NAME or ${VAR_NAME}
+  return value.replace(envVarRegex, (match, varName1, varName2) => {
+    const varName = varName1 || varName2;
+    if (process && process.env && typeof process.env[varName] === 'string') {
+      return process.env[varName]!;
+    }
+    return match;
+  });
+}
+
+function resolveEnvVarsInObject<T>(obj: T): T {
+  if (
+    obj === null ||
+    obj === undefined ||
+    typeof obj === 'boolean' ||
+    typeof obj === 'number'
+  ) {
+    return obj;
+  }
+
+  if (typeof obj === 'string') {
+    return resolveEnvVarsInString(obj) as unknown as T;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => resolveEnvVarsInObject(item)) as unknown as T;
+  }
+
+  if (typeof obj === 'object') {
+    const newObj = { ...obj } as T;
+    for (const key in newObj) {
+      if (Object.prototype.hasOwnProperty.call(newObj, key)) {
+        newObj[key] = resolveEnvVarsInObject(newObj[key]);
+      }
+    }
+    return newObj;
+  }
+
+  return obj;
+}
+
+/**
+ * Loads settings from user and workspace directories.
+ * Project settings override user settings.
+ */
+export function loadSettings(workspaceDir: string): LoadedSettings {
+  let userSettings: Settings = {};
+  let workspaceSettings: Settings = {};
+  const settingsErrors: SettingsError[] = [];
+
+  // Load user settings
+  try {
+    if (fs.existsSync(USER_SETTINGS_PATH)) {
+      const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
+      const parsedUserSettings = JSON.parse(
+        stripJsonComments(userContent),
+      ) as Settings;
+      userSettings = resolveEnvVarsInObject(parsedUserSettings);
+    }
+  } catch (error: unknown) {
+    settingsErrors.push({
+      message: getErrorMessage(error),
+      path: USER_SETTINGS_PATH,
+    });
+  }
+
+  const workspaceSettingsPath = path.join(
+    workspaceDir,
+    SETTINGS_DIRECTORY_NAME,
+    'settings.json',
+  );
+
+  // Load workspace settings
+  try {
+    if (fs.existsSync(workspaceSettingsPath)) {
+      const projectContent = fs.readFileSync(workspaceSettingsPath, 'utf-8');
+      const parsedWorkspaceSettings = JSON.parse(
+        stripJsonComments(projectContent),
+      ) as Settings;
+      workspaceSettings = resolveEnvVarsInObject(parsedWorkspaceSettings);
+    }
+  } catch (error: unknown) {
+    settingsErrors.push({
+      message: getErrorMessage(error),
+      path: workspaceSettingsPath,
+    });
+  }
+
+  return new LoadedSettings(
+    {
+      path: USER_SETTINGS_PATH,
+      settings: userSettings,
+    },
+    {
+      path: workspaceSettingsPath,
+      settings: workspaceSettings,
+    },
+    settingsErrors,
+  );
+}
+
+export function saveSettings(settingsFile: SettingsFile): void {
+  try {
+    // Ensure the directory exists
+    const dirPath = path.dirname(settingsFile.path);
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+
+    fs.writeFileSync(
+      settingsFile.path,
+      JSON.stringify(settingsFile.settings, null, 2),
+      'utf-8',
+    );
+  } catch (error) {
+    console.error('Error saving user settings file:', error);
+  }
+}
+</file>
+
+<file path="src/utils/error-mapper.ts">
+import { type OpenAIError, type OpenAIErrorResponse } from '../types.js';
+
+/**
+ * Maps a caught error from the Gemini API or auth flow to a standard
+ * OpenAI error object and a corresponding HTTP status code.
+ * @param error The caught unknown error.
+ * @returns An object containing the standard OpenAI error and a suggested status code.
+ */
+export function mapErrorToOpenAIError(error: unknown): {
+  openAIError: OpenAIErrorResponse;
+  statusCode: number;
+} {
+  let message = 'An unknown error occurred.';
+  let type: OpenAIError['type'] = 'server_error';
+  let code: string | null = 'internal_error';
+  let statusCode = 500;
+
+  if (error instanceof Error) {
+    message = error.message;
+
+    // Check for specific error messages to determine a more accurate error code.
+    if (message.includes('Authentication failed')) {
+      statusCode = 401;
+      type = 'authentication_error';
+      code = 'invalid_api_key';
+      message =
+        'Invalid authentication credentials. Please check your GCP_SERVICE_ACCOUNT.';
+    } else if (
+      message.includes('429') ||
+      message.toLowerCase().includes('quota')
+    ) {
+      statusCode = 429;
+      type = 'server_error';
+      code = 'rate_limit_exceeded';
+      message =
+        'You exceeded your current quota, please check your plan and billing details.';
+    } else if (
+      message.includes('400') ||
+      message.toLowerCase().includes('invalid')
+    ) {
+      statusCode = 400;
+      type = 'invalid_request_error';
+      code = 'invalid_request';
+    } else if (message.includes('500')) {
+      statusCode = 500;
+      type = 'server_error';
+      code = 'server_error';
+    }
+    // More Gemini-specific error mappings can be added here if needed.
+  }
+
+  const openAIError: OpenAIErrorResponse = {
+    error: {
+      message,
+      type,
+      // We generally don't know the specific parameter that caused the error in this context.
+      param: null,
+      code,
+    },
+  };
+
+  return { openAIError, statusCode };
+}
+</file>
+
+<file path="src/utils/logger.ts">
+const LOG_PREFIX = '[BRIDGE-SERVER]';
+
+type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function log(level: LogLevel, ...args: any[]) {
+  const timestamp = new Date().toISOString();
+  // Select the appropriate console method based on the log level.
+  const logFunction =
+    console[level.toLowerCase() as 'log' | 'warn' | 'error' | 'debug'] ||
+    console.log;
+
+  // Optimize printing of error objects for clarity.
+  const finalArgs = args.map(arg => {
+    if (arg instanceof Error) {
+      return { message: arg.message, stack: arg.stack };
+    }
+    return arg;
+  });
+
+  logFunction(`${timestamp} ${LOG_PREFIX} [${level}]`, ...finalArgs);
+}
+
+export const logger = {
+  info: (...args: unknown[]) => log('INFO', ...args),
+  warn: (...args: unknown[]) => log('WARN', ...args),
+  error: (...args: unknown[]) => log('ERROR', ...args),
+  // The debug method only logs if debugMode is true.
+  debug: (debugMode: boolean, ...args: unknown[]) => {
+    if (debugMode) {
+      log('DEBUG', ...args);
+    }
+  },
+};
+</file>
+
+<file path="src/utils/package.ts">
+/**
+ * @license
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import {
+  readPackageUp,
+  type PackageJson as BasePackageJson,
+} from 'read-package-up';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+export type PackageJson = BasePackageJson & {
+  config?: {
+    sandboxImageUri?: string;
+  };
+};
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let packageJson: PackageJson | undefined;
+
+export async function getPackageJson(): Promise<PackageJson | undefined> {
+  if (packageJson) {
+    return packageJson;
+  }
+
+  const result = await readPackageUp({ cwd: __dirname });
+  if (!result) {
+    // TODO: Maybe bubble this up as an error.
+    return;
+  }
+
+  packageJson = result.packageJson;
+  return packageJson;
+}
+</file>
+
+<file path="src/utils/version.ts">
+/**
+ * @license
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { getPackageJson } from './package.js';
+
+export async function getCliVersion(): Promise<string> {
+  const pkgJson = await getPackageJson();
+  return process.env.CLI_VERSION || pkgJson?.version || 'unknown';
+}
+</file>
+
+<file path="src/gemini-client.ts">
+/**
+ * @license
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { type Config, GeminiChat } from '@google/gemini-cli-core';
+import {
+  type Content,
+  type Part,
+  type Tool,
+  type FunctionDeclaration,
+  type GenerateContentConfig,
+  FunctionCallingConfigMode,
+} from '@google/genai';
+import {
+  type OpenAIMessage,
+  type MessageContentPart,
+  type OpenAIChatCompletionRequest,
+  type StreamChunk,
+  type ReasoningData,
+} from './types.js';
+import { logger } from './utils/logger.js';
+
+/**
+ * Recursively removes fields from a JSON schema that are not supported by the
+ * Gemini API.
+ * @param schema The JSON schema to sanitize.
+ * @returns A new schema object without the unsupported fields.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sanitizeGeminiSchema(schema: any): any {
+  if (typeof schema !== 'object' || schema === null) {
+    return schema;
+  }
+
+  // Create a new object, filtering out unsupported keys at the current level.
+  const newSchema: { [key: string]: any } = {};
+  for (const key in schema) {
+    if (key !== '$schema' && key !== 'additionalProperties') {
+      newSchema[key] = schema[key];
+    }
+  }
+
+  // Recurse into nested 'properties' and 'items'.
+  if (newSchema.properties) {
+    const newProperties: { [key: string]: any } = {};
+    for (const key in newSchema.properties) {
+      newProperties[key] = sanitizeGeminiSchema(newSchema.properties[key]);
+    }
+    newSchema.properties = newProperties;
+  }
+
+  if (newSchema.items) {
+    newSchema.items = sanitizeGeminiSchema(newSchema.items);
+  }
+
+  return newSchema;
+}
+
+export class GeminiApiClient {
+  private readonly config: Config;
+  private readonly contentGenerator;
+  private readonly debugMode: boolean;
+
+  constructor(config: Config, debugMode = false) {
+    this.config = config;
+    this.contentGenerator = this.config.getGeminiClient().getContentGenerator();
+    this.debugMode = debugMode;
+  }
+
+  /**
+   * Converts OpenAI tool definitions to Gemini tool definitions.
+   */
+  private convertOpenAIToolsToGemini(
+    openAITools?: OpenAIChatCompletionRequest['tools'],
+  ): Tool[] | undefined {
+    if (!openAITools || openAITools.length === 0) {
+      return undefined;
+    }
+
+    const functionDeclarations: FunctionDeclaration[] = openAITools
+      .filter(tool => tool.type === 'function' && tool.function)
+      .map(tool => {
+        const sanitizedParameters = sanitizeGeminiSchema(
+          tool.function.parameters,
+        );
+        return {
+          name: tool.function.name,
+          description: tool.function.description,
+          parameters: sanitizedParameters,
+        };
+      });
+
+    if (functionDeclarations.length === 0) {
+      return undefined;
+    }
+
+    return [{ functionDeclarations }];
+  }
+
+  /**
+   * Parses the original function name from a tool_call_id.
+   * ID format: "call_{functionName}_{uuid}"
+   */
+  private parseFunctionNameFromId(toolCallId: string): string {
+    const parts = toolCallId.split('_');
+    if (parts.length > 2 && parts[0] === 'call') {
+      // Reassemble the function name which might contain underscores.
+      return parts.slice(1, parts.length - 1).join('_');
+    }
+    // Fallback mechanism, not ideal but better than sending a wrong name.
+    return 'unknown_tool_from_id';
+  }
+
+  /**
+   * Converts an OpenAI-formatted message to a Gemini-formatted Content object.
+   */
+  private openAIMessageToGemini(msg: OpenAIMessage): Content {
+    // Handle assistant messages, which can contain both text and tool calls
+    if (msg.role === 'assistant') {
+      const parts: Part[] = [];
+
+      // Handle text content. It can be null when tool_calls are present.
+      if (msg.content && typeof msg.content === 'string') {
+        parts.push({ text: msg.content });
+      }
+
+      // Handle tool calls
+      if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+        for (const toolCall of msg.tool_calls) {
+          if (toolCall.type === 'function' && toolCall.function) {
+            try {
+              // Gemini API's functionCall.args expects an object, not a string.
+              // OpenAI's arguments is a JSON string, so it needs to be parsed.
+              const argsObject = JSON.parse(toolCall.function.arguments);
+              parts.push({
+                functionCall: {
+                  name: toolCall.function.name,
+                  args: argsObject,
+                },
+              });
+            } catch (e) {
+              logger.warn(
+                'Failed to parse tool call arguments',
+                {
+                  arguments: toolCall.function.arguments,
+                },
+                e,
+              );
+            }
+          }
+        }
+      }
+      return { role: 'model', parts };
+    }
+
+    // Handle tool responses
+    if (msg.role === 'tool') {
+      const functionName = this.parseFunctionNameFromId(msg.tool_call_id || '');
+      let responsePayload: Record<string, unknown>;
+
+      try {
+        const parsed = JSON.parse(msg.content as string);
+
+        // The Gemini API expects an object for the response.
+        // If the parsed content is a non-null, non-array object, use it directly.
+        // Otherwise, wrap primitives, arrays, or null in an object.
+        if (
+          typeof parsed === 'object' &&
+          parsed !== null &&
+          !Array.isArray(parsed)
+        ) {
+          responsePayload = parsed as Record<string, unknown>;
+        } else {
+          responsePayload = { output: parsed };
+        }
+      } catch (e) {
+        // If parsing fails, it's a plain string. Wrap it.
+        responsePayload = { output: msg.content };
+      }
+
+      return {
+        role: 'function', // Gemini uses the 'function' role to hold a functionResponse
+        parts: [
+          {
+            functionResponse: {
+              name: functionName,
+              // Pass the parsed or wrapped object as the response value.
+              response: responsePayload,
+            },
+          },
+        ],
+      };
+    }
+
+    // Handle user and system messages
+    const role = 'user'; // system and user roles are mapped to 'user'
+
+    if (typeof msg.content === 'string') {
+      return { role, parts: [{ text: msg.content }] };
+    }
+
+    if (Array.isArray(msg.content)) {
+      const parts = msg.content.reduce<Part[]>((acc, part: MessageContentPart) => {
+        if (part.type === 'text') {
+          acc.push({ text: part.text || '' });
+        } else if (part.type === 'image_url' && part.image_url) {
+          const imageUrl = part.image_url.url;
+          if (imageUrl.startsWith('data:')) {
+            const [mimePart, dataPart] = imageUrl.split(',');
+            const mimeType = mimePart.split(':')[1].split(';')[0];
+            acc.push({ inlineData: { mimeType, data: dataPart } });
+          } else {
+            // Gemini API prefers inlineData, but fileData is a possible fallback.
+            acc.push({ fileData: { mimeType: 'image/jpeg', fileUri: imageUrl } });
+          }
+        }
+        return acc;
+      }, []);
+
+      return { role, parts };
+    }
+
+    return { role, parts: [{ text: '' }] };
+  }
+
+  /**
+   * Sends a streaming request to the Gemini API.
+   */
+  public async sendMessageStream({
+    model,
+    messages,
+    tools,
+    tool_choice,
+  }: {
+    model: string;
+    messages: OpenAIMessage[];
+    tools?: OpenAIChatCompletionRequest['tools'];
+    tool_choice?: any;
+  }): Promise<AsyncGenerator<StreamChunk>> {
+    let clientSystemInstruction: Content | undefined = undefined;
+    const useInternalPrompt = !!this.config.getUserMemory(); // Check if there is a prompt from GEMINI.md
+
+    // If not using the internal prompt, treat the client's system prompt as the system instruction.
+    if (!useInternalPrompt) {
+      const systemMessageIndex = messages.findIndex(msg => msg.role === 'system');
+      if (systemMessageIndex !== -1) {
+        // Splice returns an array of removed items, so we take the first one.
+        const systemMessage = messages.splice(systemMessageIndex, 1)[0];
+        clientSystemInstruction = this.openAIMessageToGemini(systemMessage);
+      }
+    }
+    // If using internal prompt, the system message from the client (if any)
+    // will be converted to a 'user' role message by openAIMessageToGemini,
+    // effectively merging it into the conversation history.
+
+    const history = messages.map(msg => this.openAIMessageToGemini(msg));
+    const lastMessage = history.pop();
+
+    logger.info('Calling Gemini API', { model });
+
+    logger.debug(this.debugMode, 'Sending request to Gemini', {
+      historyLength: history.length,
+      lastMessage,
+    });
+
+    if (!lastMessage) {
+      throw new Error('No message to send.');
+    }
+
+    // Create a new, isolated chat session for each request.
+    const oneShotChat = new GeminiChat(
+      this.config,
+      this.contentGenerator,
+      {},
+      history,
+    );
+
+    const geminiTools = this.convertOpenAIToolsToGemini(tools);
+
+    const generationConfig: GenerateContentConfig = {};
+    // If a system prompt was extracted from the client's request, use it. This
+    // will override any system prompt set in the GeminiChat instance.
+    if (clientSystemInstruction) {
+      generationConfig.systemInstruction = clientSystemInstruction;
+    }
+
+    if (tool_choice && tool_choice !== 'auto') {
+      generationConfig.toolConfig = {
+        functionCallingConfig: {
+          mode:
+            tool_choice.type === 'function'
+              ? FunctionCallingConfigMode.ANY
+              : FunctionCallingConfigMode.AUTO,
+          allowedFunctionNames: tool_choice.function
+            ? [tool_choice.function.name]
+            : undefined,
+        },
+      };
+    }
+
+    const geminiStream = await oneShotChat.sendMessageStream({
+      message: lastMessage.parts || [],
+      config: {
+        tools: geminiTools,
+        ...generationConfig,
+      },
+    });
+
+    logger.debug(this.debugMode, 'Got stream from Gemini.');
+
+    // Transform the event stream to a simpler StreamChunk stream
+    return (async function* (): AsyncGenerator<StreamChunk> {
+      for await (const response of geminiStream) {
+        const parts = response.candidates?.[0]?.content?.parts || [];
+        for (const part of parts) {
+          if (part.text) {
+            yield { type: 'text', data: part.text };
+          }
+          if (part.functionCall && part.functionCall.name) {
+            yield {
+              type: 'tool_code',
+              data: {
+                name: part.functionCall.name,
+                args:
+                  (part.functionCall.args as Record<string, unknown>) ?? {},
+              },
+            };
+          }
+        }
+      }
+    })();
+  }
+}
+</file>
+
+<file path="src/index.ts">
+#!/usr/bin/env node
+/**
+ * @license
+ * Copyright 2025 Intelligent-Internet
+ * SPDX-License-Identifier: Apache-2.0
+*/
+import {
+  Config,
+  ApprovalMode,
+  sessionId,
+  loadServerHierarchicalMemory,
+  FileDiscoveryService,
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_GEMINI_EMBEDDING_MODEL,
+  MCPServerConfig,
+  AuthType,
+} from '@google/gemini-cli-core';
+import { loadSettings, type Settings } from './config/settings.js';
+import { loadExtensions, type Extension } from './config/extension.js';
+import { getCliVersion } from './utils/version.js';
+import { loadServerConfig } from './config/config.js';
+import { GcliMcpBridge } from './bridge/bridge.js';
+import { createOpenAIRouter } from './bridge/openai.js';
+import express from 'express';
+import { logger } from './utils/logger.js';
+import { type SecurityPolicy } from './types.js';
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+
+function mergeMcpServers(
+  settings: Settings,
+  extensions: Extension[],
+): Record<string, MCPServerConfig> {
+  const mcpServers: Record<string, MCPServerConfig> = {
+    ...(settings.mcpServers || {}),
+  };
+  for (const extension of extensions) {
+    Object.entries(extension.config.mcpServers || {}).forEach(
+      ([key, server]) => {
+        if (mcpServers[key]) {
+          logger.warn(
+            `Skipping extension MCP config for server with key "${key}" as it already exists.`,
+          );
+          return;
+        }
+        mcpServers[key] = server;
+      },
+    );
+  }
+  return mcpServers;
+}
+
+async function startMcpServer() {
+  // --- Yargs-based argument parsing ---
+  const argv = await yargs(hideBin(process.argv))
+    .option('host', {
+      alias: 'h',
+      type: 'string',
+      description: 'The host address to listen on.',
+      default: '127.0.0.1',
+    })
+    .option('port', {
+      alias: 'p',
+      type: 'number',
+      description: 'The port to listen on. Can also be set via GEMINI_MCP_PORT.',
+    })
+    .option('debug', {
+      type: 'boolean',
+      description: 'Enable detailed debug logging.',
+      default: false,
+    })
+    .option('use-internal-prompt', {
+      type: 'boolean',
+      description:
+        'Load internal GEMINI.md prompts. If false, server runs in pure OpenAI bridge mode and uses client system prompts.',
+      default: false,
+    })
+    .option('tools-model', {
+      type: 'string',
+      description:
+        'Specify a default model for tool execution (e.g., web search). Can also be set via GEMINI_TOOLS_DEFAULT_MODEL.',
+    })
+    .help()
+    .alias('help', '?').argv;
+
+  // --- Configuration variables from args and environment ---
+  const host = argv.host;
+  const debugMode = argv.debug;
+  const useInternalPrompt = argv['use-internal-prompt'];
+  const toolsModel = argv['tools-model'];
+
+  // Priority: CLI arg > env var > default
+  const port =
+    argv.port ??
+    (process.env.GEMINI_MCP_PORT
+      ? parseInt(process.env.GEMINI_MCP_PORT, 10)
+      : 8765);
+
+  if (isNaN(port)) {
+    logger.error(
+      'Invalid port number provided. Use --port=<number> or set GEMINI_MCP_PORT environment variable.',
+    );
+    process.exit(1);
+  }
+
+  logger.info('Starting Gemini CLI MCP Server...');
+  if (useInternalPrompt) {
+    logger.info(
+      'Internal prompt mode enabled (--use-internal-prompt). GEMINI.md will be loaded.',
+    );
+  } else {
+    logger.info(
+      'Pure OpenAI bridge mode enabled. GEMINI.md will be ignored. Client system prompts will be used.',
+    );
+  }
+
+  // Reuse core config loading, but manually construct Config.
+  const workspaceRoot = process.cwd();
+  const settings = loadSettings(workspaceRoot);
+  const extensions = loadExtensions(workspaceRoot);
+  const cliVersion = await getCliVersion();
+
+  // 加载安全策略，如果未定义，则默认为 read-only 模式
+  const securityPolicy: SecurityPolicy =
+    (settings.merged as any).securityPolicy || {
+      mode: 'read-only',
+    };
+  logger.info(`Security policy loaded. Mode: ${securityPolicy.mode}`);
+
+  const config = await loadServerConfig(
+    settings.merged,
+    extensions,
+    sessionId,
+    debugMode,
+    useInternalPrompt,
+    toolsModel,
+  );
+
+  // Initialize Auth - this is critical to initialize the tool registry and gemini client
+  let selectedAuthType = settings.merged.selectedAuthType;
+  if (!selectedAuthType && !process.env.GEMINI_API_KEY) {
+    logger.error(
+      'Auth missing: Please complete the authentication setup in gemini-cli first. \n' +
+      'This program accesses Gemini services via gemini-cli, it does not run standalone. \n' +
+      'Check the gemini-cli documentation for setup instructions.',
+    );
+    process.exit(1);
+  }
+  selectedAuthType = selectedAuthType || AuthType.USE_GEMINI;
+  await config.refreshAuth(selectedAuthType);
+  logger.debug(debugMode, `Using authentication method: ${selectedAuthType}`);
+
+  // Log the model being used for tools. This is now set in loadServerConfig.
+  logger.debug(debugMode, `Using model for tools: ${config.getModel()}`);
+
+  // Initialize and start MCP Bridge and OpenAI services.
+  const mcpBridge = new GcliMcpBridge(
+    config,
+    cliVersion,
+    securityPolicy,
+    debugMode,
+  );
+
+  const app = express();
+  app.use(express.json({ limit: '50mb' }));
+
+  // Start the MCP service.
+  await mcpBridge.start(app);
+
+  // Start OpenAI compatible endpoint.
+  const openAIRouter = createOpenAIRouter(config, debugMode);
+  app.use('/v1', openAIRouter);
+
+  app.listen(port, host, () => {
+    logger.info('Server running', {
+      port,
+      host,
+      mcpUrl: `http://${host}:${port}/mcp`,
+      openAIUrl: `http://${host}:${port}/v1`,
+    });
+  });
+}
+
+startMcpServer().catch(error => {
+  logger.error('Failed to start Gemini CLI MCP Bridge:', error);
+  process.exit(1);
+});
+</file>
+
+<file path="src/mcp-test-client.ts">
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {
+  ListToolsResultSchema,
+  type Notification,
+} from '@modelcontextprotocol/sdk/types.js';
+import { URL } from 'url';
+import { z } from 'zod';
+import OpenAI from 'openai';
+
+// Define the schema for a text content block, as it's not exported by the SDK.
+const TextContentBlockSchema = z.object({
+  type: z.literal('text'),
+  text: z.string(),
+});
+
+// --- CONFIG ---
+const SERVER_URL = 'http://localhost:8765/mcp';
+const LOG_PREFIX = '[TEST CLIENT]';
+
+function logWithPrefix(...args: unknown[]) {
+  console.log(LOG_PREFIX, ...args);
+}
+
+// --- Monkey-patch fetch for logging ---
+const originalFetch = global.fetch;
+global.fetch = async (url, options) => {
+  logWithPrefix('➡️  FETCHING:', options?.method || 'GET', url.toString());
+  if (options?.headers) {
+    logWithPrefix(
+      '   Headers:',
+      JSON.stringify(
+        Object.fromEntries((options.headers as Headers).entries()),
+        null,
+        2,
+      ),
+    );
+  }
+  if (options?.body) {
+    const bodyStr = options.body.toString();
+    logWithPrefix(
+      '   Body:',
+      bodyStr.length > 300 ? bodyStr.substring(0, 300) + '...' : bodyStr,
+    );
+  }
+
+  const response = await originalFetch(url, options);
+
+  logWithPrefix(
+    '⬅️  RESPONSE:',
+    response.status,
+    response.statusText,
+    'from',
+    options?.method || 'GET',
+    url.toString(),
+  );
+  logWithPrefix(
+    '   Response Headers:',
+    JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2),
+  );
+
+  const clonedResponse = response.clone();
+  clonedResponse
+    .text()
+    .then(text => {
+      if (text) {
+        logWithPrefix(
+          '   Response Body:',
+          text.length > 300 ? text.substring(0, 300) + '...' : text,
+        );
+      }
+    })
+    .catch(() => {});
+
+  return response;
+};
+// ------------------------------------
+
+async function runTestClient() {
+  logWithPrefix('🚀 Starting MCP Test Client...');
+  logWithPrefix(`🎯 Target Server URL: ${SERVER_URL}`);
+
+  const client = new Client({
+    name: 'mcp-debug-client',
+    version: '1.0.0',
+  });
+
+  client.onerror = (error: Error) => {
+    console.error(`${LOG_PREFIX} 💥 Client-level Error:`, error);
+  };
+
+  client.fallbackNotificationHandler = async (notification: Notification) => {
+    logWithPrefix(
+      `📡 Received Unhandled Notification:`,
+      JSON.stringify(notification, null, 2),
+    );
+  };
+
+  logWithPrefix('🚌 Creating StreamableHTTPClientTransport...');
+  const transport = new StreamableHTTPClientTransport(new URL(SERVER_URL));
+
+  transport.onmessage = message => {
+    logWithPrefix('📥 Received Message:', JSON.stringify(message, null, 2));
+  };
+
+  try {
+    logWithPrefix('🔌 Attempting to connect to server...');
+    await client.connect(transport);
+    logWithPrefix('✅ Connection successful! Initialization complete.');
+    logWithPrefix('🔎 Server Info:', client.getServerVersion());
+    logWithPrefix('🛠️ Server Capabilities:', client.getServerCapabilities());
+  } catch (error) {
+    console.error(`${LOG_PREFIX} ❌ Failed to connect or initialize:`, error);
+    process.exit(1);
+  }
+
+  try {
+    logWithPrefix('📋 Requesting tool list...');
+    const result = await client.request(
+      { method: 'tools/list' },
+      ListToolsResultSchema,
+    );
+
+    logWithPrefix('✅ Successfully received tool list response!');
+
+    if (result.tools && result.tools.length > 0) {
+      logWithPrefix(`🛠️ Discovered ${result.tools.length} tools:`);
+      result.tools.forEach((tool, index) => {
+        logWithPrefix(`  ${index + 1}. Name: ${tool.name}`);
+        logWithPrefix(`     Title: ${tool.title || 'N/A'}`);
+        logWithPrefix(`     Description: ${tool.description || 'N/A'}`);
+        logWithPrefix(
+          `     Input Schema:`,
+          JSON.stringify(tool.inputSchema, null, 2),
+        );
+      });
+    } else {
+      logWithPrefix('⚠️ Server returned an empty list of tools.');
+    }
+  } catch (error) {
+    console.error(`${LOG_PREFIX} ❌ Failed to list tools:`, error);
+  } finally {
+    logWithPrefix('👋 Closing MCP connection...');
+    await client.close();
+    logWithPrefix('🚪 MCP Connection closed.');
+  }
+
+  // Now, test the OpenAI endpoint
+  await testOpenAIEndpoint();
+
+  logWithPrefix('✅ Test finished.');
+}
+
+async function testOpenAIEndpoint() {
+  logWithPrefix('-----------------------------------');
+  logWithPrefix('🚀 Testing OpenAI compatible endpoint...');
+
+  const openai = new OpenAI({
+    baseURL: 'http://localhost:8765/v1',
+    apiKey: 'not-needed', // The API key is not used by our local server
+  });
+
+  try {
+    const stream = await openai.chat.completions.create({
+      model: 'gemini-pro', // This can be any string, it's passed to the transformer
+      messages: [{ role: 'user', content: 'Why is the sky blue?' }],
+      stream: true,
+    });
+
+    let fullResponse = '';
+    logWithPrefix('✅ Stream opened. Receiving response...');
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      fullResponse += content;
+      process.stdout.write(content);
+    }
+    console.log(''); // Newline after stream
+
+    if (fullResponse.toLowerCase().includes('scattering')) {
+      logWithPrefix('✅ Validation successful: Response contains "scattering".');
+    } else {
+      console.error(
+        `${LOG_PREFIX} ❌ Validation failed: Response did not contain "scattering".`,
+      );
+    }
+  } catch (error) {
+    console.error(
+      `${LOG_PREFIX} ❌ Failed to call OpenAI endpoint:`,
+      error,
+    );
+  }
+  logWithPrefix('-----------------------------------');
+}
+
+runTestClient().catch(error => {
+  console.error(`${LOG_PREFIX} 🚨 Unhandled top-level error:`, error);
+  process.exit(1);
+});
+</file>
+
+<file path="src/types.ts">
+/**
+ * @license
+ * Copyright 2025 Google LLC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+export interface MessageContentPart {
+  type: 'text' | 'image_url';
+  text?: string;
+  image_url?: {
+    url: string;
+    detail?: 'low' | 'high' | 'auto';
+  };
+}
+
+export interface OpenAIToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    /** A JSON string of arguments. */
+    arguments: string;
+  };
+}
+
+export interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  /** Can be null when tool_calls are present. */
+  content: string | null | MessageContentPart[];
+  tool_calls?: OpenAIToolCall[];
+  tool_call_id?: string;
+}
+
+export interface OpenAIFunction {
+  name: string;
+  description?: string;
+  /** JSON Schema object */
+  parameters: Record<string, unknown>;
+}
+
+export interface OpenAITool {
+  type: 'function';
+  function: OpenAIFunction;
+}
+
+export interface OpenAIChatCompletionRequest {
+  model: string;
+  messages: OpenAIMessage[];
+  stream?: boolean;
+  /** Corresponds to Gemini's Tool[] */
+  tools?: OpenAITool[];
+  /** Corresponds to Gemini's ToolConfig */
+  tool_choice?: any;
+}
+
+export interface ReasoningData {
+  reasoning: string;
+}
+
+export type StreamChunk =
+  | { type: 'text'; data: string }
+  | { type: 'reasoning'; data: ReasoningData }
+  | { type: 'tool_code'; data: { name: string; args: Record<string, unknown> } };
+
+/**
+ * Defines the structure of an OpenAI API-compatible error object.
+ */
+export interface OpenAIError {
+  message: string;
+  type:
+    | 'invalid_request_error'
+    | 'api_error'
+    | 'authentication_error'
+    | 'server_error';
+  param: string | null;
+  code: string | null;
+}
+
+/**
+ * Defines the complete OpenAI API error response structure.
+ */
+export interface OpenAIErrorResponse {
+  error: OpenAIError;
+}
+
+export interface SecurityPolicy {
+  mode?: 'read-only' | 'restricted' | 'yolo';
+  allowedTools?: string[];
+  shellCommandPolicy?: {
+    allow?: string[];
+    deny?: string[];
+  };
+}
+
+// 定义非流式响应中的 message 对象
+export interface OpenAIChatCompletionMessage {
+  role: 'assistant';
+  content: string | null;
+  tool_calls?: OpenAIToolCall[];
+}
+
+// 定义非流式响应中的 choice 对象
+export interface OpenAIChatCompletionChoice {
+  index: number;
+  message: OpenAIChatCompletionMessage;
+  finish_reason:
+    | 'stop'
+    | 'length'
+    | 'tool_calls'
+    | 'content_filter'
+    | 'function_call';
+}
+
+// 定义完整的非流式响应体
+export interface OpenAIChatCompletion {
+  id: string;
+  object: 'chat.completion';
+  created: number;
+  model: string;
+  choices: OpenAIChatCompletionChoice[];
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+</file>
+
+<file path="package.json">
+{
+  "name": "@intelligentinternet/gemini-cli-mcp-openai-bridge",
+  "version": "0.0.3",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "gemini-cli-bridge": "dist/index.js"
+  },
+  "repository": "Intelligent-Internet/gemini-cli-common-bridge",
+  "scripts": {
+    "build": "node ../../scripts/build_package.js",
+    "clean": "rm -rf dist",
+    "start": "node dist/index.js",
+    "debug": "node --inspect-brk dist/index.js",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@google/gemini-cli-core": "*",
+    "@modelcontextprotocol/sdk": "^1.13.2",
+    "command-exists": "^1.2.9",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "openai": "^5.8.2",
+    "read-package-up": "^11.0.0",
+    "strip-json-comments": "^3.1.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "typescript": "^5.3.3",
+    "vitest": "^3.1.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+</file>
+
+<file path="tsconfig.json">
+{
+    "extends": "../../tsconfig.json",
+    "compilerOptions": {
+        "outDir": "dist",
+        "rootDir": "src"
+    },
+    "include": [
+        "src/**/*.ts"
+    ],
+    "references": [
+        {
+            "path": "../core"
+        },
+        {
+            "path": "../cli"
+        }
+    ]
+}
+</file>
+
+</files>

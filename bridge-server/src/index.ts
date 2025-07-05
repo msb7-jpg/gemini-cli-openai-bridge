@@ -100,6 +100,12 @@ async function startMcpServer() {
         "In 'configured' or 'yolo' mode, allows all discovered MCP proxy tools.",
       default: false,
     })
+    // 新增：添加 --resolve-redirects 标志
+    .option('resolve-redirects', {
+      type: 'boolean',
+      description: 'Resolve redirect URLs from search results to their final destination.',
+      default: false, // 默认关闭
+    })
     .option('i-know-what-i-am-doing', {
       type: 'boolean',
       description:
@@ -115,6 +121,7 @@ async function startMcpServer() {
   const useInternalPrompt = argv['use-internal-prompt'];
   const toolsModel = argv['tools-model'];
   const targetDir = path.resolve(argv['target-dir']);
+  const resolveRedirects = argv['resolve-redirects']; // 新增：获取标志的值
 
   // Priority: CLI arg > env var > default
   const port =
@@ -241,6 +248,7 @@ async function startMcpServer() {
     cliVersion,
     securityPolicy,
     debugMode,
+    resolveRedirects, // 新增：将标志传递给 Bridge
   );
 
   // Log available tools

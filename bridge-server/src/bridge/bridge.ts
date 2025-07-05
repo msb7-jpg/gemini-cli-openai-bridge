@@ -22,6 +22,7 @@ import {
   type Content,
 } from '@google/genai';
 import { randomUUID } from 'node:crypto';
+import { fetch } from 'undici'; // 确保 undici 的 fetch 被导入
 import { logger } from '../utils/logger.js';
 import { type SecurityPolicy } from '../types.js'; // 引入新的类型
 
@@ -38,6 +39,7 @@ export class GcliMcpBridge {
   private readonly cliVersion: string;
   private readonly securityPolicy: SecurityPolicy; // NEW: 存储安全策略
   private readonly debugMode: boolean;
+  private readonly resolveRedirects: boolean; // 新增：存储重定向解析标志
   private readonly sessions: Record<
     string,
     { mcpServer: McpServer; transport: StreamableHTTPServerTransport }
@@ -48,11 +50,13 @@ export class GcliMcpBridge {
     cliVersion: string,
     securityPolicy: SecurityPolicy, // NEW: 接收安全策略
     debugMode = false,
+    resolveRedirects = false, // 新增：接收新标志
   ) {
     this.config = config;
     this.cliVersion = cliVersion;
     this.securityPolicy = securityPolicy; // NEW: 存储策略
     this.debugMode = debugMode;
+    this.resolveRedirects = resolveRedirects; // 新增：存储新标志
   }
 
   public async getAvailableTools(): Promise<GcliTool[]> {
@@ -259,6 +263,31 @@ export class GcliMcpBridge {
     }
   }
 
+  // 新增：辅助函数，用于解析单个重定向URL
+  private async resolveRedirectUrl(url: string): Promise<string> {
+    // 只处理 vertexaisearch 的重定向链接
+    if (!url.includes('vertexaisearch.cloud.google.com')) {
+      return url;
+    }
+    try {
+      // 使用 HEAD 请求更高效，因为我们只需要最终的URL，不需要内容
+      const response = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'follow', // 关键：让 fetch 自动跟随重定向
+      });
+      // response.url 会是重定向链的最终URL
+      return response.url;
+    } catch (error) {
+      logger.warn(
+        `Failed to resolve redirect for ${url}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      // 如果解析失败，返回原始URL
+      return url;
+    }
+  }
+
   // NEW: 辅助方法，用于判断工具是否为只读
   private isReadOnlyTool(toolName: string): boolean {
     const readOnlyTools = [
@@ -398,6 +427,37 @@ export class GcliMcpBridge {
             status: 'success',
             durationMs,
           });
+
+          // 新增：如果工具是 google_web_search 并且开启了解析重定向，则处理返回结果
+          if (
+            tool.name === 'google_web_search' &&
+            this.resolveRedirects &&
+            typeof result.llmContent === 'string'
+          ) {
+            logger.debug(this.debugMode, 'Resolving redirect URLs in web search result...');
+            const originalContent = result.llmContent;
+            const urlPattern = /\[(\d+)\]\s(.*?)\s\((https?:\/\/vertexaisearch\.cloud\.google\.com\/grounding-api-redirect\/.*?)\)/g;
+            
+            const matches = [...originalContent.matchAll(urlPattern)];
+            const redirectUrls = matches.map(match => match[3]);
+            
+            if (redirectUrls.length > 0) {
+              const finalUrls = await Promise.all(
+                redirectUrls.map(url => this.resolveRedirectUrl(url))
+              );
+              
+              let modifiedContent = originalContent;
+              matches.forEach((match, index) => {
+                const originalUrl = match[3];
+                const finalUrl = finalUrls[index];
+                if (originalUrl !== finalUrl) {
+                  modifiedContent = modifiedContent.replace(originalUrl, finalUrl);
+                }
+              });
+              result.llmContent = modifiedContent;
+            }
+          }
+
           return this.convertGcliResultToMcpResult(result);
         } catch (e) {
           const durationMs = Date.now() - startTime;

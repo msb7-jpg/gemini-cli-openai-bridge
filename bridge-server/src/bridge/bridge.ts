@@ -22,11 +22,10 @@ import {
   type Content,
 } from '@google/genai';
 import { randomUUID } from 'node:crypto';
-import { fetch } from 'undici'; // 确保 undici 的 fetch 被导入
+import { fetch } from 'undici'; // 显式导入 undici 的 fetch
 import { logger } from '../utils/logger.js';
-import { type SecurityPolicy } from '../types.js'; // 引入新的类型
+import { type SecurityPolicy } from '../types.js';
 
-// NEW: 定义一个安全策略错误类
 class SecurityPolicyError extends Error {
   constructor(message: string) {
     super(message);
@@ -48,15 +47,21 @@ export class GcliMcpBridge {
   constructor(
     config: Config,
     cliVersion: string,
-    securityPolicy: SecurityPolicy, // NEW: 接收安全策略
+    securityPolicy: SecurityPolicy,
     debugMode = false,
-    resolveRedirects = false, // 新增：接收新标志
+    resolveRedirects = false, // 新增
   ) {
     this.config = config;
     this.cliVersion = cliVersion;
-    this.securityPolicy = securityPolicy; // NEW: 存储策略
+    this.securityPolicy = securityPolicy;
     this.debugMode = debugMode;
-    this.resolveRedirects = resolveRedirects; // 新增：存储新标志
+    this.resolveRedirects = resolveRedirects; // 新增
+    // 新增：启动时打印日志，确认模式是否开启
+    logger.info(
+      `Redirect resolution mode: ${
+        this.resolveRedirects ? 'ENABLED' : 'DISABLED'
+      }`,
+    );
   }
 
   public async getAvailableTools(): Promise<GcliTool[]> {
@@ -263,19 +268,19 @@ export class GcliMcpBridge {
     }
   }
 
-  // 新增：辅助函数，用于解析单个重定向URL
+  // 新增：解析重定向链接的辅助函数
   private async resolveRedirectUrl(url: string): Promise<string> {
-    // 只处理 vertexaisearch 的重定向链接
     if (!url.includes('vertexaisearch.cloud.google.com')) {
       return url;
     }
     try {
-      // 使用 HEAD 请求更高效，因为我们只需要最终的URL，不需要内容
+      logger.debug(this.debugMode, `Resolving redirect for: ${url}`);
+      // 使用 undici 的 fetch，它默认跟随重定向
       const response = await fetch(url, {
-        method: 'HEAD',
-        redirect: 'follow', // 关键：让 fetch 自动跟随重定向
+        method: 'HEAD', // 使用 HEAD 请求更高效
+        redirect: 'follow',
       });
-      // response.url 会是重定向链的最终URL
+      logger.debug(this.debugMode, `Resolved to: ${response.url}`);
       return response.url;
     } catch (error) {
       logger.warn(
@@ -283,8 +288,7 @@ export class GcliMcpBridge {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      // 如果解析失败，返回原始URL
-      return url;
+      return url; // 解析失败则返回原始 URL
     }
   }
 
@@ -428,33 +432,52 @@ export class GcliMcpBridge {
             durationMs,
           });
 
-          // 新增：如果工具是 google_web_search 并且开启了解析重定向，则处理返回结果
+          // 新增：重定向解析逻辑
           if (
             tool.name === 'google_web_search' &&
             this.resolveRedirects &&
             typeof result.llmContent === 'string'
           ) {
-            logger.debug(this.debugMode, 'Resolving redirect URLs in web search result...');
-            const originalContent = result.llmContent;
-            const urlPattern = /\[(\d+)\]\s(.*?)\s\((https?:\/\/vertexaisearch\.cloud\.google\.com\/grounding-api-redirect\/.*?)\)/g;
-            
-            const matches = [...originalContent.matchAll(urlPattern)];
-            const redirectUrls = matches.map(match => match[3]);
-            
+            logger.debug(
+              this.debugMode,
+              'Resolving redirect URLs in web search result...',
+            );
+
+            const urlPattern =
+              /\((https:\/\/vertexaisearch\.cloud\.google\.com\/grounding-api-redirect\/[^\s)]+)\)/g;
+            const redirectUrls = [
+              ...result.llmContent.matchAll(urlPattern),
+            ].map(match => match[1]);
+
             if (redirectUrls.length > 0) {
-              const finalUrls = await Promise.all(
-                redirectUrls.map(url => this.resolveRedirectUrl(url))
+              logger.debug(
+                this.debugMode,
+                `Found ${redirectUrls.length} redirect URLs to resolve.`,
               );
-              
-              let modifiedContent = originalContent;
-              matches.forEach((match, index) => {
-                const originalUrl = match[3];
+              const finalUrls = await Promise.all(
+                redirectUrls.map(url => this.resolveRedirectUrl(url)),
+              );
+
+              let modifiedContent = result.llmContent;
+              redirectUrls.forEach((originalUrl, index) => {
                 const finalUrl = finalUrls[index];
                 if (originalUrl !== finalUrl) {
-                  modifiedContent = modifiedContent.replace(originalUrl, finalUrl);
+                  logger.debug(
+                    this.debugMode,
+                    `Replacing ${originalUrl} with ${finalUrl}`,
+                  );
+                  modifiedContent = modifiedContent.replace(
+                    originalUrl,
+                    finalUrl,
+                  );
                 }
               });
               result.llmContent = modifiedContent;
+            } else {
+              logger.debug(
+                this.debugMode,
+                'No redirect URLs found in the result.',
+              );
             }
           }
 

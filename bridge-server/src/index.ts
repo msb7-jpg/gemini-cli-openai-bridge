@@ -188,19 +188,49 @@ async function startMcpServer() {
     targetDir,
   );
 
-  // Initialize Auth - this is critical to initialize the tool registry and gemini client
+  // REFACTORED: Authentication logic with improved verbosity and error handling.
   let selectedAuthType = settings.merged.selectedAuthType;
-  if (!selectedAuthType && !process.env.GEMINI_API_KEY) {
+  let authReason = '';
+
+  if (selectedAuthType) {
+    authReason = ' (from .gemini/settings.json)';
+  } else if (process.env.GEMINI_API_KEY) {
+    selectedAuthType = AuthType.USE_GEMINI;
+    authReason = ' (fallback to GEMINI_API_KEY environment variable)';
+  } else {
+    // NEW: More descriptive error message for missing auth.
     logger.error(
-      'Auth missing: Please complete the authentication setup in gemini-cli first. \n' +
-      'This program accesses Gemini services via gemini-cli, it does not run standalone. \n' +
-      'Check the gemini-cli documentation for setup instructions.',
+      'Authentication missing: Please complete the authentication setup in gemini-cli first, or set the GEMINI_API_KEY environment variable.\n' +
+        'This program accesses Gemini services via gemini-cli and does not run standalone.\n' +
+        'Check the gemini-cli documentation for setup instructions.',
     );
     process.exit(1);
   }
-  selectedAuthType = selectedAuthType || AuthType.USE_GEMINI;
-  await config.refreshAuth(selectedAuthType);
-  logger.debug(debugMode, `Using authentication method: ${selectedAuthType}`);
+
+  // NEW: Pre-authentication logging.
+  logger.info(
+    `Attempting authentication using "${selectedAuthType}" method${authReason}...`,
+  );
+
+  try {
+    await config.refreshAuth(selectedAuthType);
+    // NEW: Success logging.
+    logger.info(`✅ Authentication successful!`);
+    // The original debug log is still useful.
+    logger.debug(debugMode, `Using authentication method: ${selectedAuthType}`);
+  } catch (e) {
+    // NEW: Robust error handling and logging.
+    logger.error(
+      `❌ Authentication failed: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+    logger.error(
+      'Please check your authentication configuration (e.g., API Key validity, OAuth credentials) and try again.',
+    );
+    process.exit(1);
+  }
+  // --- End of Refactored Block ---
 
   // Log the model being used for tools. This is now set in loadServerConfig.
   logger.debug(debugMode, `Using model for tools: ${config.getModel()}`);

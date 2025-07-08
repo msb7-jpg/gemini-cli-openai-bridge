@@ -17,4 +17,4 @@ RUN cp -r bridge-server gemini-cli/packages/ && \
 
 WORKDIR /app/gemini-cli/packages/bridge-server
 EXPOSE 8765
-CMD ["npm", "run", "start"]
+CMD ["npm", "run", "start", "--host", "0.0.0.0"]

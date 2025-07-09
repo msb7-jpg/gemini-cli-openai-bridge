@@ -22,10 +22,10 @@ import {
   type Content,
 } from '@google/genai';
 import { randomUUID } from 'node:crypto';
+import { fetch } from 'undici'; // 显式导入 undici 的 fetch
 import { logger } from '../utils/logger.js';
-import { type SecurityPolicy } from '../types.js'; // 引入新的类型
+import { type SecurityPolicy } from '../types.js';
 
-// NEW: 定义一个安全策略错误类
 class SecurityPolicyError extends Error {
   constructor(message: string) {
     super(message);
@@ -38,6 +38,7 @@ export class GcliMcpBridge {
   private readonly cliVersion: string;
   private readonly securityPolicy: SecurityPolicy; // NEW: 存储安全策略
   private readonly debugMode: boolean;
+  private readonly resolveRedirects: boolean; // 新增：存储重定向解析标志
   private readonly sessions: Record<
     string,
     { mcpServer: McpServer; transport: StreamableHTTPServerTransport }
@@ -46,13 +47,21 @@ export class GcliMcpBridge {
   constructor(
     config: Config,
     cliVersion: string,
-    securityPolicy: SecurityPolicy, // NEW: 接收安全策略
+    securityPolicy: SecurityPolicy,
     debugMode = false,
+    resolveRedirects = false, // 新增
   ) {
     this.config = config;
     this.cliVersion = cliVersion;
-    this.securityPolicy = securityPolicy; // NEW: 存储策略
+    this.securityPolicy = securityPolicy;
     this.debugMode = debugMode;
+    this.resolveRedirects = resolveRedirects; // 新增
+    // 新增：启动时打印日志，确认模式是否开启
+    logger.info(
+      `Redirect resolution mode: ${
+        this.resolveRedirects ? 'ENABLED' : 'DISABLED'
+      }`,
+    );
   }
 
   public async getAvailableTools(): Promise<GcliTool[]> {
@@ -259,6 +268,30 @@ export class GcliMcpBridge {
     }
   }
 
+  // 新增：解析重定向链接的辅助函数
+  private async resolveRedirectUrl(url: string): Promise<string> {
+    if (!url.includes('vertexaisearch.cloud.google.com')) {
+      return url;
+    }
+    try {
+      logger.debug(this.debugMode, `Resolving redirect for: ${url}`);
+      // 使用 undici 的 fetch，它默认跟随重定向
+      const response = await fetch(url, {
+        method: 'HEAD', // 使用 HEAD 请求更高效
+        redirect: 'follow',
+      });
+      logger.debug(this.debugMode, `Resolved to: ${response.url}`);
+      return response.url;
+    } catch (error) {
+      logger.warn(
+        `Failed to resolve redirect for ${url}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return url; // 解析失败则返回原始 URL
+    }
+  }
+
   // NEW: 辅助方法，用于判断工具是否为只读
   private isReadOnlyTool(toolName: string): boolean {
     const readOnlyTools = [
@@ -398,6 +431,56 @@ export class GcliMcpBridge {
             status: 'success',
             durationMs,
           });
+
+          // 新增：重定向解析逻辑
+          if (
+            tool.name === 'google_web_search' &&
+            this.resolveRedirects &&
+            typeof result.llmContent === 'string'
+          ) {
+            logger.debug(
+              this.debugMode,
+              'Resolving redirect URLs in web search result...',
+            );
+
+            const urlPattern =
+              /\((https:\/\/vertexaisearch\.cloud\.google\.com\/grounding-api-redirect\/[^\s)]+)\)/g;
+            const redirectUrls = [
+              ...result.llmContent.matchAll(urlPattern),
+            ].map(match => match[1]);
+
+            if (redirectUrls.length > 0) {
+              logger.debug(
+                this.debugMode,
+                `Found ${redirectUrls.length} redirect URLs to resolve.`,
+              );
+              const finalUrls = await Promise.all(
+                redirectUrls.map(url => this.resolveRedirectUrl(url)),
+              );
+
+              let modifiedContent = result.llmContent;
+              redirectUrls.forEach((originalUrl, index) => {
+                const finalUrl = finalUrls[index];
+                if (originalUrl !== finalUrl) {
+                  logger.debug(
+                    this.debugMode,
+                    `Replacing ${originalUrl} with ${finalUrl}`,
+                  );
+                  modifiedContent = modifiedContent.replace(
+                    originalUrl,
+                    finalUrl,
+                  );
+                }
+              });
+              result.llmContent = modifiedContent;
+            } else {
+              logger.debug(
+                this.debugMode,
+                'No redirect URLs found in the result.',
+              );
+            }
+          }
+
           return this.convertGcliResultToMcpResult(result);
         } catch (e) {
           const durationMs = Date.now() - startTime;

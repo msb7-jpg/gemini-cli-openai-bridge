@@ -220,6 +220,7 @@ async function startMcpServer() {
   );
 
   try {
+    await config.initialize();
     await config.refreshAuth(selectedAuthType);
     // NEW: Success logging.
     logger.info(`✅ Authentication successful!`);

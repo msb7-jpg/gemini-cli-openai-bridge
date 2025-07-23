@@ -300,13 +300,15 @@ export class GeminiApiClient {
       };
     }
 
+    
+    const prompt_id = Math.random().toString(16).slice(2);
     const geminiStream = await oneShotChat.sendMessageStream({
       message: lastMessage.parts || [],
       config: {
         tools: geminiTools,
         ...generationConfig,
       },
-    });
+    }, prompt_id);
 
     logger.debug(this.debugMode, 'Got stream from Gemini.');
 

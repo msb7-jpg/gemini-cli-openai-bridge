@@ -32,6 +32,7 @@ jobs:
 
       - name: Install dependencies & Build
         run: |
+          npm install
           npm run build
           npm test
 
@@ -67,6 +68,7 @@ jobs:
 
       - name: Install dependencies & Build
         run: |
+          npm install
           npm run build
           npm test
 

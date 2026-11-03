@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import {
   thoughtSignatureCache,
   lastThoughtSignatureByTool,
+  toolCallNameCache,
 } from '../utils/thought-signature-cache.js';
 
 export function createOpenAIRouter(config: Config, debugMode = false): Router {
@@ -110,6 +111,7 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
             fullTextContent += chunk.data;
           } else if (chunk.type === 'tool_code' && chunk.data) {
             const toolCallId = `call_${chunk.data.name}_${randomUUID()}`;
+            toolCallNameCache.set(toolCallId, chunk.data.name);
             if (chunk.data.thoughtSignature) {
               thoughtSignatureCache.set(
                 toolCallId,
@@ -192,17 +194,46 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
     }
   });
 
-  // The /v1/models endpoint can be added here.
-  router.get('/models', (req, res) => {
-    // This can return a fixed list of models or get them from the config.
+  // The /v1/models endpoint
+  router.get('/models', (_req, res) => {
     res.json({
       object: 'list',
       data: [
-        { id: 'gemini-3.8-flash', object: 'model', owned_by: 'google' },
-        { id: 'gemini-3-flash-preview', object: 'model', owned_by: 'google' },
-        { id: 'gemini-3-pro-preview', object: 'model', owned_by: 'google' },
-        { id: 'gemini-2.5-pro', object: 'model', owned_by: 'google' },
-        { id: 'gemini-2.5-flash', object: 'model', owned_by: 'google' },
+        {
+          id: 'gemini-3.8-flash',
+          object: 'model',
+          display_name: 'Gemini 3.8 Flash',
+          description: 'Google Gemini 3.8 Flash (Thinking Model)',
+          owned_by: 'google',
+        },
+        {
+          id: 'gemini-2.5-flash',
+          object: 'model',
+          display_name: 'Gemini 2.5 Flash',
+          description: 'Google Gemini 2.5 Flash (Fast & Capable)',
+          owned_by: 'google',
+        },
+        {
+          id: 'gemini-2.5-pro',
+          object: 'model',
+          display_name: 'Gemini 2.5 Pro',
+          description: 'Google Gemini 2.5 Pro (Deep Reasoning)',
+          owned_by: 'google',
+        },
+        {
+          id: 'claude-3-7-sonnet',
+          object: 'model',
+          display_name: 'Claude 3.7 Sonnet (Alias -> Gemini 3.8 Flash)',
+          description: 'Alias mapped to Gemini 3.8 Flash',
+          owned_by: 'google',
+        },
+        {
+          id: 'claude-sonnet-4-6',
+          object: 'model',
+          display_name: 'Claude Sonnet 4.6 (Alias -> Gemini 3.8 Flash)',
+          description: 'Alias mapped to Gemini 3.8 Flash',
+          owned_by: 'google',
+        },
       ],
     });
   });

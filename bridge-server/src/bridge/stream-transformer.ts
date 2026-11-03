@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   thoughtSignatureCache,
   lastThoughtSignatureByTool,
+  toolCallNameCache,
 } from '../utils/thought-signature-cache.js';
 import { type StreamChunk } from '../types.js';
 
@@ -95,6 +96,7 @@ export function createOpenAIStreamTransformer(
           const { name, args, thoughtSignature } = chunk.data;
           // IMPORTANT: Embed the function name in the ID so it can be parsed when a tool response is received.
           const toolCallId = `call_${name}_${randomUUID()}`;
+          toolCallNameCache.set(toolCallId, name);
           if (thoughtSignature) {
             thoughtSignatureCache.set(toolCallId, thoughtSignature);
             lastThoughtSignatureByTool.set(name, thoughtSignature);

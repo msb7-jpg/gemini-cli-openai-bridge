@@ -22,3 +22,5 @@ class BoundedMap<K, V> extends Map<K, V> {
 
 export const thoughtSignatureCache = new BoundedMap<string, string>(2000);
 export const lastThoughtSignatureByTool = new BoundedMap<string, string>(500);
+export const toolCallNameCache = new BoundedMap<string, string>(2000);
+

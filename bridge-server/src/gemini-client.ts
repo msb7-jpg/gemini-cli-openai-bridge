@@ -24,6 +24,7 @@ import { logger } from './utils/logger.js';
 import {
   thoughtSignatureCache,
   lastThoughtSignatureByTool,
+  toolCallNameCache,
 } from './utils/thought-signature-cache.js';
 
 const ALLOWED_GEMINI_SCHEMA_KEYS = new Set([
@@ -208,6 +209,320 @@ export function sanitizeGeminiSchema(schema: any): any {
   return newSchema;
 }
 
+export interface ConvertedGeminiMessages {
+  contents: Content[];
+  systemInstruction?: Content;
+}
+
+export function parseFunctionNameFromId(toolCallId: string): string {
+  if (!toolCallId) return 'unknown_tool';
+  const parts = toolCallId.split('_');
+  if (parts.length > 2 && parts[0] === 'call') {
+    return parts.slice(1, parts.length - 1).join('_');
+  }
+  return 'unknown_tool_from_id';
+}
+
+export function formatResponsePayload(content: unknown): Record<string, unknown> {
+  if (content === null || content === undefined) {
+    return { output: null };
+  }
+  if (typeof content === 'string') {
+    try {
+      const parsed = JSON.parse(content);
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        !Array.isArray(parsed)
+      ) {
+        return parsed as Record<string, unknown>;
+      }
+      return { output: parsed };
+    } catch {
+      return { output: content };
+    }
+  }
+  if (typeof content === 'object' && !Array.isArray(content)) {
+    return content as Record<string, unknown>;
+  }
+  return { output: content };
+}
+
+export function convertAssistantMessage(msg: OpenAIMessage): Content {
+  const parts: Part[] = [];
+
+  if (msg.content && typeof msg.content === 'string') {
+    parts.push({ text: msg.content });
+  }
+
+  if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+    for (const toolCall of msg.tool_calls) {
+      if (toolCall.type === 'function' && toolCall.function) {
+        let argsObject: Record<string, unknown> = {};
+        try {
+          argsObject = JSON.parse(toolCall.function.arguments);
+        } catch (e) {
+          logger.warn(
+            'Failed to parse tool call arguments',
+            { arguments: toolCall.function.arguments },
+            e,
+          );
+        }
+
+        const signature =
+          thoughtSignatureCache.get(toolCall.id) ||
+          lastThoughtSignatureByTool.get(toolCall.function.name);
+
+        const functionCallPart: Part = {
+          functionCall: {
+            name: toolCall.function.name,
+            args: argsObject,
+          },
+        };
+        if (signature) {
+          (functionCallPart as any).thoughtSignature = signature;
+          (functionCallPart as any).thought_signature = signature;
+        }
+        parts.push(functionCallPart);
+      }
+    }
+  }
+
+  if (parts.length === 0) {
+    parts.push({ text: '' });
+  }
+
+  return { role: 'model', parts };
+}
+
+export function convertUserMessage(msg: OpenAIMessage): Content {
+  if (typeof msg.content === 'string') {
+    return { role: 'user', parts: [{ text: msg.content }] };
+  }
+
+  if (Array.isArray(msg.content)) {
+    const parts = msg.content.reduce<Part[]>((acc, part: MessageContentPart) => {
+      if (part.type === 'text') {
+        acc.push({ text: part.text || '' });
+      } else if (part.type === 'image_url' && part.image_url) {
+        const imageUrl = part.image_url.url;
+        if (imageUrl.startsWith('data:')) {
+          const [mimePart, dataPart] = imageUrl.split(',');
+          const mimeType = mimePart.split(':')[1]?.split(';')[0] || 'image/jpeg';
+          acc.push({ inlineData: { mimeType, data: dataPart } });
+        } else {
+          acc.push({ fileData: { mimeType: 'image/jpeg', fileUri: imageUrl } });
+        }
+      }
+      return acc;
+    }, []);
+
+    return { role: 'user', parts: parts.length > 0 ? parts : [{ text: '' }] };
+  }
+
+  return { role: 'user', parts: [{ text: '' }] };
+}
+
+export function convertOpenAIMessagesToGemini(
+  messages: OpenAIMessage[],
+  options?: {
+    useInternalPrompt?: boolean;
+    debugMode?: boolean;
+  },
+): ConvertedGeminiMessages {
+  const systemParts: Part[] = [];
+  const nonSystemMessages: OpenAIMessage[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      if (typeof msg.content === 'string' && msg.content.trim()) {
+        systemParts.push({ text: msg.content });
+      } else if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (part.type === 'text' && part.text) {
+            systemParts.push({ text: part.text });
+          }
+        }
+      }
+    } else {
+      nonSystemMessages.push(msg);
+    }
+  }
+
+  let systemInstruction: Content | undefined = undefined;
+  if (systemParts.length > 0 && !options?.useInternalPrompt) {
+    systemInstruction = { role: 'system', parts: systemParts };
+  }
+
+  // Pre-index tool calls from all assistant messages
+  const toolCallMap = new Map<string, { id: string; name: string }>();
+  for (const msg of nonSystemMessages) {
+    if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+      for (const call of msg.tool_calls) {
+        if (call.id && call.function?.name) {
+          toolCallMap.set(call.id, { id: call.id, name: call.function.name });
+          toolCallNameCache.set(call.id, call.function.name);
+        }
+      }
+    }
+  }
+
+  const contents: Content[] = [];
+  let i = 0;
+
+  while (i < nonSystemMessages.length) {
+    const msg = nonSystemMessages[i];
+
+    if (msg.role === 'tool') {
+      // Collect ALL consecutive 'tool' messages
+      const toolMessages: OpenAIMessage[] = [];
+      const toolStartIndex = i;
+      while (i < nonSystemMessages.length && nonSystemMessages[i].role === 'tool') {
+        toolMessages.push(nonSystemMessages[i]);
+        i++;
+      }
+
+      // Find the assistant message immediately preceding this tool batch
+      let precedingAssistant: OpenAIMessage | undefined;
+      for (let k = toolStartIndex - 1; k >= 0; k--) {
+        if (nonSystemMessages[k].role === 'assistant') {
+          precedingAssistant = nonSystemMessages[k];
+          break;
+        }
+      }
+
+      const assistantToolCalls = precedingAssistant?.tool_calls || [];
+      const functionResponseParts: Part[] = [];
+
+      // Index current batch of tool messages by tool_call_id
+      const toolMsgByCallId = new Map<string, OpenAIMessage>();
+      const unconsumedToolMsgs: OpenAIMessage[] = [];
+
+      for (const tm of toolMessages) {
+        if (tm.tool_call_id) {
+          toolMsgByCallId.set(tm.tool_call_id, tm);
+        } else {
+          unconsumedToolMsgs.push(tm);
+        }
+      }
+
+      // If the preceding assistant message had tool calls, match them in EXACT order
+      if (assistantToolCalls.length > 0) {
+        for (const call of assistantToolCalls) {
+          const matchingMsg = toolMsgByCallId.get(call.id);
+          if (matchingMsg) {
+            toolMsgByCallId.delete(call.id);
+            functionResponseParts.push({
+              functionResponse: {
+                name: call.function.name,
+                response: formatResponsePayload(matchingMsg.content),
+              },
+            });
+          } else {
+            // Try matching unconsumed tool message by name
+            const matchIdx = unconsumedToolMsgs.findIndex(
+              m => m.name === call.function.name,
+            );
+            if (matchIdx !== -1) {
+              const [m] = unconsumedToolMsgs.splice(matchIdx, 1);
+              functionResponseParts.push({
+                functionResponse: {
+                  name: call.function.name,
+                  response: formatResponsePayload(m.content),
+                },
+              });
+            } else {
+              // Synthesize fallback response for missing tool response so count matches!
+              logger.warn(
+                `Synthesizing missing response for tool call ${call.id} (${call.function.name}) to ensure Gemini tool call parity`,
+              );
+              functionResponseParts.push({
+                functionResponse: {
+                  name: call.function.name,
+                  response: { error: 'No response provided for this tool call' },
+                },
+              });
+            }
+          }
+        }
+      }
+
+      // Any remaining tool messages that didn't match assistantToolCalls
+      for (const remaining of toolMsgByCallId.values()) {
+        const funcName =
+          toolCallMap.get(remaining.tool_call_id!)?.name ||
+          remaining.name ||
+          toolCallNameCache.get(remaining.tool_call_id!) ||
+          parseFunctionNameFromId(remaining.tool_call_id!);
+        functionResponseParts.push({
+          functionResponse: {
+            name: funcName,
+            response: formatResponsePayload(remaining.content),
+          },
+        });
+      }
+
+      for (const remaining of unconsumedToolMsgs) {
+        const funcName = remaining.name || 'unknown_tool';
+        functionResponseParts.push({
+          functionResponse: {
+            name: funcName,
+            response: formatResponsePayload(remaining.content),
+          },
+        });
+      }
+
+      if (functionResponseParts.length > 0) {
+        contents.push({
+          role: 'user',
+          parts: functionResponseParts,
+        });
+      }
+      continue;
+    }
+
+    if (msg.role === 'assistant') {
+      const assistantContent = convertAssistantMessage(msg);
+      const prev = contents.length > 0 ? contents[contents.length - 1] : undefined;
+      if (prev && prev.role === 'model') {
+        if (!prev.parts) prev.parts = [];
+        if (assistantContent.parts) {
+          prev.parts.push(...assistantContent.parts);
+        }
+      } else {
+        contents.push(assistantContent);
+      }
+      i++;
+      continue;
+    }
+
+    // msg.role === 'user'
+    const userContent = convertUserMessage(msg);
+    const prev = contents.length > 0 ? contents[contents.length - 1] : undefined;
+    const prevIsFunctionResponse = prev?.parts
+      ? prev.parts.some(p => 'functionResponse' in p)
+      : false;
+
+    // Only merge into prev if prev is user AND is not a functionResponse turn
+    if (prev && prev.role === 'user' && !prevIsFunctionResponse) {
+      if (!prev.parts) prev.parts = [];
+      if (userContent.parts) {
+        prev.parts.push(...userContent.parts);
+      }
+    } else {
+      contents.push(userContent);
+    }
+    i++;
+  }
+
+  // Ensure first turn starts with 'user'
+  if (contents.length > 0 && contents[0].role === 'model') {
+    contents.unshift({ role: 'user', parts: [{ text: 'Hello' }] });
+  }
+
+  return { contents, systemInstruction };
+}
+
 export class GeminiApiClient {
   private readonly config: Config;
   private readonly contentGenerator;
@@ -254,134 +569,30 @@ export class GeminiApiClient {
    * ID format: "call_{functionName}_{uuid}"
    */
   private parseFunctionNameFromId(toolCallId: string): string {
-    const parts = toolCallId.split('_');
-    if (parts.length > 2 && parts[0] === 'call') {
-      // Reassemble the function name which might contain underscores.
-      return parts.slice(1, parts.length - 1).join('_');
-    }
-    // Fallback mechanism, not ideal but better than sending a wrong name.
-    return 'unknown_tool_from_id';
+    return parseFunctionNameFromId(toolCallId);
   }
 
   /**
    * Converts an OpenAI-formatted message to a Gemini-formatted Content object.
    */
   private openAIMessageToGemini(msg: OpenAIMessage): Content {
-    // Handle assistant messages, which can contain both text and tool calls
     if (msg.role === 'assistant') {
-      const parts: Part[] = [];
-
-      // Handle text content. It can be null when tool_calls are present.
-      if (msg.content && typeof msg.content === 'string') {
-        parts.push({ text: msg.content });
-      }
-
-      // Handle tool calls
-      if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-        for (const toolCall of msg.tool_calls) {
-          if (toolCall.type === 'function' && toolCall.function) {
-            try {
-              // Gemini API's functionCall.args expects an object, not a string.
-              // OpenAI's arguments is a JSON string, so it needs to be parsed.
-              const argsObject = JSON.parse(toolCall.function.arguments);
-              const signature =
-                thoughtSignatureCache.get(toolCall.id) ||
-                lastThoughtSignatureByTool.get(toolCall.function.name);
-
-              const functionCallPart: Part = {
-                functionCall: {
-                  name: toolCall.function.name,
-                  args: argsObject,
-                },
-              };
-              if (signature) {
-                (functionCallPart as any).thoughtSignature = signature;
-                (functionCallPart as any).thought_signature = signature;
-              }
-              parts.push(functionCallPart);
-            } catch (e) {
-              logger.warn(
-                'Failed to parse tool call arguments',
-                {
-                  arguments: toolCall.function.arguments,
-                },
-                e,
-              );
-            }
-          }
-        }
-      }
-      return { role: 'model', parts };
+      return convertAssistantMessage(msg);
     }
-
-    // Handle tool responses
     if (msg.role === 'tool') {
-      const functionName = this.parseFunctionNameFromId(msg.tool_call_id || '');
-      let responsePayload: Record<string, unknown>;
-
-      try {
-        const parsed = JSON.parse(msg.content as string);
-
-        // The Gemini API expects an object for the response.
-        // If the parsed content is a non-null, non-array object, use it directly.
-        // Otherwise, wrap primitives, arrays, or null in an object.
-        if (
-          typeof parsed === 'object' &&
-          parsed !== null &&
-          !Array.isArray(parsed)
-        ) {
-          responsePayload = parsed as Record<string, unknown>;
-        } else {
-          responsePayload = { output: parsed };
-        }
-      } catch (e) {
-        // If parsing fails, it's a plain string. Wrap it.
-        responsePayload = { output: msg.content };
-      }
-
       return {
-        role: 'user', // A tool response must be in a 'user' role message for Gemini API history.
+        role: 'user',
         parts: [
           {
             functionResponse: {
-              name: functionName,
-              // Pass the parsed or wrapped object as the response value.
-              response: responsePayload,
+              name: this.parseFunctionNameFromId(msg.tool_call_id || ''),
+              response: formatResponsePayload(msg.content),
             },
           },
         ],
       };
     }
-
-    // Handle user and system messages
-    const role = 'user'; // system and user roles are mapped to 'user'
-
-    if (typeof msg.content === 'string') {
-      return { role, parts: [{ text: msg.content }] };
-    }
-
-    if (Array.isArray(msg.content)) {
-      const parts = msg.content.reduce<Part[]>((acc, part: MessageContentPart) => {
-        if (part.type === 'text') {
-          acc.push({ text: part.text || '' });
-        } else if (part.type === 'image_url' && part.image_url) {
-          const imageUrl = part.image_url.url;
-          if (imageUrl.startsWith('data:')) {
-            const [mimePart, dataPart] = imageUrl.split(',');
-            const mimeType = mimePart.split(':')[1].split(';')[0];
-            acc.push({ inlineData: { mimeType, data: dataPart } });
-          } else {
-            // Gemini API prefers inlineData, but fileData is a possible fallback.
-            acc.push({ fileData: { mimeType: 'image/jpeg', fileUri: imageUrl } });
-          }
-        }
-        return acc;
-      }, []);
-
-      return { role, parts };
-    }
-
-    return { role, parts: [{ text: '' }] };
+    return convertUserMessage(msg);
   }
 
   /**
@@ -398,24 +609,19 @@ export class GeminiApiClient {
     tools?: OpenAIChatCompletionRequest['tools'];
     tool_choice?: any;
   }): Promise<AsyncGenerator<StreamChunk>> {
-    let clientSystemInstruction: Content | undefined = undefined;
-    const useInternalPrompt = !!this.config.getUserMemory(); // Check if there is a prompt from GEMINI.md
+    const useInternalPrompt = !!this.config.getUserMemory();
 
-    // If not using the internal prompt, treat the client's system prompt as the system instruction.
-    if (!useInternalPrompt) {
-      const systemMessageIndex = messages.findIndex(msg => msg.role === 'system');
-      if (systemMessageIndex !== -1) {
-        // Splice returns an array of removed items, so we take the first one.
-        const systemMessage = messages.splice(systemMessageIndex, 1)[0];
-        clientSystemInstruction = this.openAIMessageToGemini(systemMessage);
-      }
+    const { contents, systemInstruction } = convertOpenAIMessagesToGemini(
+      messages,
+      { useInternalPrompt, debugMode: this.debugMode },
+    );
+
+    if (contents.length === 0) {
+      throw new Error('No message to send.');
     }
-    // If using internal prompt, the system message from the client (if any)
-    // will be converted to a 'user' role message by openAIMessageToGemini,
-    // effectively merging it into the conversation history.
 
-    const history = messages.map(msg => this.openAIMessageToGemini(msg));
-    const lastMessage = history.pop();
+    const lastMessage = contents.pop()!;
+    const history = contents;
 
     logger.info('Calling Gemini API', { model });
 
@@ -424,13 +630,19 @@ export class GeminiApiClient {
       lastMessage,
     });
 
-    if (!lastMessage) {
-      throw new Error('No message to send.');
-    }
+    // Create a proxy of config so GeminiChat uses the requested model instead of global default
+    const requestConfig = new Proxy(this.config, {
+      get(target, prop, receiver) {
+        if (prop === 'getModel') {
+          return () => model;
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
 
     // Create a new, isolated chat session for each request.
     const oneShotChat = new GeminiChat(
-      this.config,
+      requestConfig,
       this.contentGenerator,
       {},
       history,
@@ -439,10 +651,8 @@ export class GeminiApiClient {
     const geminiTools = this.convertOpenAIToolsToGemini(tools);
 
     const generationConfig: GenerateContentConfig = {};
-    // If a system prompt was extracted from the client's request, use it. This
-    // will override any system prompt set in the GeminiChat instance.
-    if (clientSystemInstruction) {
-      generationConfig.systemInstruction = clientSystemInstruction;
+    if (systemInstruction) {
+      generationConfig.systemInstruction = systemInstruction;
     }
 
     if (tool_choice && tool_choice !== 'auto') {

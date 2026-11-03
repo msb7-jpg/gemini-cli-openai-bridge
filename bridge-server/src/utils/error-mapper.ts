@@ -35,6 +35,14 @@ export function mapErrorToOpenAIError(error: unknown): {
       message =
         'You exceeded your current quota, please check your plan and billing details.';
     } else if (
+      message.includes('404') ||
+      message.includes('notFound') ||
+      message.includes('NOT_FOUND')
+    ) {
+      statusCode = 404;
+      type = 'invalid_request_error';
+      code = 'model_not_found';
+    } else if (
       message.includes('400') ||
       message.toLowerCase().includes('invalid')
     ) {

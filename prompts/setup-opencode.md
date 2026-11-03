@@ -6,7 +6,7 @@
 ---
 
 ### Goal
-Build and configure `@miguelsb/gemini-cli-openai-bridge` from source and configure OpenCode (`~/.config/opencode/opencode.json`) so the user can run OpenCode powered by Google Gemini models (including `gemini-3.8-flash` and `gemini-2.5-pro`).
+Build and configure `@migueldsbatista/gemini-cli-openai-bridge` from source and configure OpenCode (`~/.config/opencode/opencode.json`) so the user can run OpenCode powered by Google Gemini models (including `gemini-3.8-flash` and `gemini-2.5-pro`).
 
 ---
 
@@ -32,7 +32,7 @@ Build and configure `@miguelsb/gemini-cli-openai-bridge` from source and configu
 ### Step 2: Install or Build the Bridge
 First, attempt installing globally from npm:
 ```bash
-npm install -g @miguelsb/gemini-cli-openai-bridge
+npm install -g @migueldsbatista/gemini-cli-openai-bridge
 ```
 
 If that fails or you are building from local source:

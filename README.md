@@ -7,7 +7,7 @@
 > **Standalone Evolution & Maintenance**  
 > Built upon the open-source [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) core and inspired by the archived [`Intelligent-Internet/gemini-cli-mcp-openai-bridge`](https://github.com/Intelligent-Internet/gemini-cli-mcp-openai-bridge).
 
-`@miguelsb/gemini-cli-openai-bridge` provides a high-performance **OpenAI-compatible (`/v1/chat/completions`)** and **Anthropic Messages-compatible (`/v1/messages`)** HTTP API bridge that routes requests directly to Google Gemini models using the official authentication, session management, and execution engine of Google's Gemini CLI.
+`@migueldsbatista/gemini-cli-openai-bridge` provides a high-performance **OpenAI-compatible (`/v1/chat/completions`)** and **Anthropic Messages-compatible (`/v1/messages`)** HTTP API bridge that routes requests directly to Google Gemini models using the official authentication, session management, and execution engine of Google's Gemini CLI.
 
 It is specifically tailored for AI coding agents and developer workflows such as **[OpenCode](https://opencode.ai)**, **Claude Code (`claude`)**, **Aider**, **Roo Code**, **Continue**, and **Open WebUI**.
 
@@ -64,7 +64,7 @@ Claude Code (`claude`) transparently operating through our Anthropic Messages AP
 
 The original upstream repository [`Intelligent-Internet/gemini-cli-mcp-openai-bridge`](https://github.com/Intelligent-Internet/gemini-cli-mcp-openai-bridge) was archived in July 2026. This project is a standalone continuation and refactor that addresses critical issues and modern agent requirements:
 
-| Feature / Area | Original Archived Project | `@miguelsb/gemini-cli-openai-bridge` |
+| Feature / Area | Original Archived Project | `@migueldsbatista/gemini-cli-openai-bridge` |
 |---|---|---|
 | **Anthropic Messages API (`/v1/messages`)** | ❌ Not supported | ✅ **Fully supported**: native integration for **Claude Code** (`claude`) with streaming & tools. |
 | **`thought_signature` Handling** | ❌ Stripped / discarded, breaking multi-turn tool calling with thinking models | ✅ **Cached & injected** across turns via `thoughtSignatureCache`, enabling Gemini 2.5 & 3.x thinking models. |
@@ -81,7 +81,7 @@ The original upstream repository [`Intelligent-Internet/gemini-cli-mcp-openai-br
 ### Method 1: Global Install via npm (Recommended)
 
 ```bash
-npm install -g @miguelsb/gemini-cli-openai-bridge
+npm install -g @migueldsbatista/gemini-cli-openai-bridge
 ```
 
 Start the bridge on the default port (`8765`):
@@ -92,7 +92,7 @@ gemini-bridge --port=8765
 ### Method 2: Run Directly via npx (Zero Installation)
 
 ```bash
-npx @miguelsb/gemini-cli-openai-bridge --port=8765
+npx @migueldsbatista/gemini-cli-openai-bridge --port=8765
 ```
 
 ### Method 3: Build from Source (Developers & Contributors)

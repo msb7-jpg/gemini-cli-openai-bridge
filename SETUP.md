@@ -1,6 +1,6 @@
 # Gemini CLI OpenAI Bridge — Setup & Integration Guide
 
-This guide walks you through building **`@miguelsb/gemini-cli-openai-bridge`** from source, configuring Google authentication, and integrating it seamlessly with **OpenCode** and **Claude Code (`claude`)**.
+This guide walks you through building **`@migueldsbatista/gemini-cli-openai-bridge`** from source, configuring Google authentication, and integrating it seamlessly with **OpenCode** and **Claude Code (`claude`)**.
 
 ---
 
@@ -14,7 +14,7 @@ Please set up the Gemini CLI OpenAI Bridge by reading the instructions at:
 - OpenCode Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md
 (or Claude Code Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md)
 
-Follow these instructions to install @miguelsb/gemini-cli-openai-bridge (via npm or from source), configure my credentials, set up the provider, and verify the integration.
+Follow these instructions to install @migueldsbatista/gemini-cli-openai-bridge (via npm or from source), configure my credentials, set up the provider, and verify the integration.
 ```
 
 ---
@@ -23,11 +23,11 @@ Follow these instructions to install @miguelsb/gemini-cli-openai-bridge (via npm
 
 ### Method A: Install via npm (Fastest)
 ```bash
-npm install -g @miguelsb/gemini-cli-openai-bridge
+npm install -g @migueldsbatista/gemini-cli-openai-bridge
 ```
 Or run directly without installation:
 ```bash
-npx @miguelsb/gemini-cli-openai-bridge --port=8765
+npx @migueldsbatista/gemini-cli-openai-bridge --port=8765
 ```
 
 ### Method B: Build from Source (Contributors)

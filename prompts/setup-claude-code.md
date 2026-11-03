@@ -33,7 +33,7 @@ Build the bridge from source and configure Claude Code's Anthropic Messages API 
 ### Step 2: Install or Build the Bridge
 First, attempt installing globally from npm:
 ```bash
-npm install -g @miguelsb/gemini-cli-openai-bridge
+npm install -g @migueldsbatista/gemini-cli-openai-bridge
 ```
 
 If that fails or you are building from local source:

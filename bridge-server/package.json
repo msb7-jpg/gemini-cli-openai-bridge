@@ -1,12 +1,48 @@
 {
   "name": "@miguelsb/gemini-cli-openai-bridge",
   "version": "0.1.15",
+  "description": "High-performance OpenAI (/v1/chat/completions) & Anthropic (/v1/messages) bridge for Google Gemini CLI. Tailored for OpenCode, Claude Code, Roo Code & Aider.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "gemini-bridge": "dist/index.js",
     "gemini-cli-bridge": "dist/index.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/msb7-jpg/gemini-cli-openai-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/msb7-jpg/gemini-cli-openai-bridge/issues"
+  },
+  "homepage": "https://github.com/msb7-jpg/gemini-cli-openai-bridge#readme",
+  "author": "Miguel de Sousa Batista",
+  "license": "Apache-2.0",
+  "keywords": [
+    "gemini",
+    "gemini-cli",
+    "claude-code",
+    "opencode",
+    "openai-compatible",
+    "anthropic-messages",
+    "function-calling",
+    "tool-calling",
+    "thinking-models",
+    "thought-signature",
+    "gemini-3.8-flash",
+    "gemini-2.5-pro",
+    "ai-agents",
+    "coding-assistant"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
   "scripts": {
     "build": "node ../../scripts/build_package.js",
     "clean": "rm -rf dist",

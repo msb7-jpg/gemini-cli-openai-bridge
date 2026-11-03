@@ -1,6 +1,33 @@
 {
     "name": "@miguelsb/gemini-cli-openai-bridge",
     "version": "0.1.15",
+    "description": "High-performance OpenAI (/v1/chat/completions) & Anthropic (/v1/messages) bridge for Google Gemini CLI. Tailored for OpenCode, Claude Code, Roo Code & Aider.",
+    "author": "Miguel de Sousa Batista",
+    "license": "Apache-2.0",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/msb7-jpg/gemini-cli-openai-bridge.git"
+    },
+    "bugs": {
+        "url": "https://github.com/msb7-jpg/gemini-cli-openai-bridge/issues"
+    },
+    "homepage": "https://github.com/msb7-jpg/gemini-cli-openai-bridge#readme",
+    "keywords": [
+        "gemini",
+        "gemini-cli",
+        "claude-code",
+        "opencode",
+        "openai-compatible",
+        "anthropic-messages",
+        "function-calling",
+        "tool-calling",
+        "thinking-models",
+        "thought-signature",
+        "gemini-3.8-flash",
+        "gemini-2.5-pro",
+        "ai-agents",
+        "coding-assistant"
+    ],
     "engines": {
         "node": ">=18.0.0"
     },
@@ -15,8 +42,9 @@
         "prepare": "npm run install && npm run port",
         "build": "npm run prepare && npm run build --workspace=@miguelsb/gemini-cli-openai-bridge",
         "start": "npm start --workspace=@miguelsb/gemini-cli-openai-bridge --",
-        "publish:bridge-server": "cd gemini-cli/packages/bridge-server && npm publish --access public",
-        "test": "cd gemini-cli && npx vitest run packages/bridge-server"
+        "test": "cd gemini-cli && npx vitest run packages/bridge-server",
+        "pack:bridge-server": "npm run build && cd gemini-cli/packages/bridge-server && npm pack",
+        "publish:bridge-server": "npm run build && cd gemini-cli/packages/bridge-server && npm publish --access public"
     },
     "bin": {
         "gemini-bridge": "gemini-cli/packages/bridge-server/dist/index.js",

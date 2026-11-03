@@ -76,29 +76,34 @@ The original upstream repository [`Intelligent-Internet/gemini-cli-mcp-openai-br
 
 ---
 
-## 🚀 Installation & Getting Started (Build from Source)
+## 🚀 Installation & Getting Started
 
-### 1. Clone & Build
+### Method 1: Global Install via npm (Recommended)
+
+```bash
+npm install -g @miguelsb/gemini-cli-openai-bridge
+```
+
+Start the bridge on the default port (`8765`):
+```bash
+gemini-bridge --port=8765
+```
+
+### Method 2: Run Directly via npx (Zero Installation)
+
+```bash
+npx @miguelsb/gemini-cli-openai-bridge --port=8765
+```
+
+### Method 3: Build from Source (Developers & Contributors)
+
 ```bash
 git clone https://github.com/msb7-jpg/gemini-cli-openai-bridge.git
 cd gemini-cli-openai-bridge
 npm install
 npm run build
-```
-
-### 2. Make CLI Globally Available
-Run `npm link` to register `gemini-bridge` and `gemini-cli-bridge` globally on your system:
-```bash
 npm link
-```
-
-### 3. Start the Bridge Server
-```bash
 gemini-bridge --port=8765
-```
-Or start directly with npm:
-```bash
-npm start -- --port=8765
 ```
 
 ---
@@ -242,6 +247,16 @@ Rebuild after modifying files in `bridge-server/`:
 ```bash
 npm run port
 npm run build
+```
+
+Create a distribution tarball for testing:
+```bash
+npm run pack:bridge-server
+```
+
+Publish to npm registry (maintainers):
+```bash
+npm run publish:bridge-server
 ```
 
 ---

@@ -14,26 +14,28 @@ Please set up the Gemini CLI OpenAI Bridge by reading the instructions at:
 - OpenCode Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md
 (or Claude Code Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md)
 
-Follow these instructions to clone https://github.com/msb7-jpg/gemini-cli-openai-bridge.git, build from source, link globally, configure my credentials, and verify the integration.
+Follow these instructions to install @miguelsb/gemini-cli-openai-bridge (via npm or from source), configure my credentials, set up the provider, and verify the integration.
 ```
 
 ---
 
-## 📦 1. Build and Install from Source
+## 📦 1. Installation
 
-Because this package is built directly from source:
+### Method A: Install via npm (Fastest)
+```bash
+npm install -g @miguelsb/gemini-cli-openai-bridge
+```
+Or run directly without installation:
+```bash
+npx @miguelsb/gemini-cli-openai-bridge --port=8765
+```
 
-### Clone and Build
+### Method B: Build from Source (Contributors)
 ```bash
 git clone https://github.com/msb7-jpg/gemini-cli-openai-bridge.git
 cd gemini-cli-openai-bridge
 npm install
 npm run build
-```
-
-### (Optional) Link Globally
-To make the `gemini-bridge` and `gemini-cli-bridge` CLI commands available anywhere in your terminal without publishing to npm:
-```bash
 npm link
 ```
 
@@ -148,3 +150,23 @@ For agent prompt instructions, see [https://github.com/msb7-jpg/gemini-cli-opena
 ### User Environment vs. Build Engine
 - **Global Gemini CLI (`@google/gemini-cli@0.66.0+`)**: The bridge is 100% compatible with the latest official releases of Google's Gemini CLI. You can use any version of `@google/gemini-cli` (including `v0.66.0` or nightly builds) on your machine for `gemini auth login`. The bridge reads your OAuth credentials seamlessly.
 - **Internal Core Submodule**: The build workspace embeds the stable `@google/gemini-cli-core` engine. This decoupling protects the bridge from upstream breaking changes (such as monorepo refactors and internal API signature shifts in Google's unreleased core packages), while our adapter layer handles modern protocol features (Protobuf schema sanitization, cryptographic thought signatures, Anthropic Messages translation, and Gemini 3.8 Flash model execution) with complete stability.
+
+---
+
+## 🚀 6. Publishing to npm (Maintainers)
+
+To release and publish updates to npm:
+
+1. **Verify Tests**:
+   ```bash
+   npm test
+   ```
+2. **Build and Test Tarball**:
+   ```bash
+   npm run pack:bridge-server
+   ```
+3. **Publish with Public Access**:
+   ```bash
+   npm run publish:bridge-server
+   ```
+   *(Ensure you are logged into npm via `npm login` before publishing).*

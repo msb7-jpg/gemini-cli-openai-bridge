@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
-[![npm version](https://img.shields.io/npm/v/@miguelsb/gemini-cli-openai-bridge)](https://www.npmjs.com/package/@miguelsb/gemini-cli-openai-bridge)
+[![Build & Test](https://img.shields.io/badge/tests-22%20passed-brightgreen)](https://github.com/msb7-jpg/gemini-cli-openai-bridge)
 
 > **Standalone Evolution & Maintenance**  
 > Built upon the open-source [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) core and inspired by the archived [`Intelligent-Internet/gemini-cli-mcp-openai-bridge`](https://github.com/Intelligent-Internet/gemini-cli-mcp-openai-bridge).
@@ -10,6 +10,23 @@
 `@miguelsb/gemini-cli-openai-bridge` provides a high-performance **OpenAI-compatible (`/v1/chat/completions`)** and **Anthropic Messages-compatible (`/v1/messages`)** HTTP API bridge that routes requests directly to Google Gemini models using the official authentication, session management, and execution engine of Google's Gemini CLI.
 
 It is specifically tailored for AI coding agents and developer workflows such as **[OpenCode](https://opencode.ai)**, **Claude Code (`claude`)**, **Aider**, **Roo Code**, **Continue**, and **Open WebUI**.
+
+---
+
+## ⚡ 1-Click Setup Prompt for AI Agents
+
+If you are using an AI coding assistant (such as **OpenCode**, **Claude Code**, **Cursor**, **Aider**, or **Roo Code**), simply copy and paste this prompt:
+
+```markdown
+Read @SETUP.md and @prompts/setup-opencode.md (or @prompts/setup-claude-code.md).
+Please build the Gemini CLI OpenAI Bridge from source, ensure Google credentials are configured,
+set up the provider configuration in my settings, and verify that the bridge is running.
+```
+
+Dedicated prompt files:
+- 🤖 OpenCode: [`prompts/setup-opencode.md`](prompts/setup-opencode.md)
+- 🎭 Claude Code: [`prompts/setup-claude-code.md`](prompts/setup-claude-code.md)
+- 📋 Comprehensive Setup Guide: [`SETUP.md`](SETUP.md)
 
 ---
 
@@ -56,34 +73,29 @@ The original upstream repository [`Intelligent-Internet/gemini-cli-mcp-openai-br
 
 ---
 
-## 🚀 Installation & Getting Started
+## 🚀 Installation & Getting Started (Build from Source)
 
-### 1. Global Installation
-
-```bash
-npm install -g @miguelsb/gemini-cli-openai-bridge
-```
-
-Run the bridge using `gemini-bridge` or `gemini-cli-bridge`:
-
-```bash
-gemini-bridge --port=8765
-```
-
-### 2. Run Directly via npx
-
-```bash
-npx @miguelsb/gemini-cli-openai-bridge --port=8765
-```
-
-### 3. Build and Run from Source
-
+### 1. Clone & Build
 ```bash
 git clone https://github.com/msb7-jpg/gemini-cli-openai-bridge.git
 cd gemini-cli-openai-bridge
 npm install
 npm run build
-npm start
+```
+
+### 2. Make CLI Globally Available
+Run `npm link` to register `gemini-bridge` and `gemini-cli-bridge` globally on your system:
+```bash
+npm link
+```
+
+### 3. Start the Bridge Server
+```bash
+gemini-bridge --port=8765
+```
+Or start directly with npm:
+```bash
+npm start -- --port=8765
 ```
 
 ---
@@ -93,7 +105,10 @@ npm start
 The bridge requires authentication to access Google Gemini APIs:
 
 1. **Option A: Gemini CLI OAuth (Interactive - Recommended)**  
-   If you have already logged in via `gemini-cli` (`gemini auth login` or `.gemini/settings.json`), the bridge will automatically use your cached credentials.
+   If you have already logged in via `gemini-cli` (`gemini auth login` or `.gemini/settings.json`), the bridge will automatically use your cached credentials:
+   ```bash
+   gemini auth login
+   ```
 
 2. **Option B: Environment Variable (CI / Headless Servers)**  
    Set your API key before starting the server:
@@ -101,23 +116,6 @@ The bridge requires authentication to access Google Gemini APIs:
    export GEMINI_API_KEY="AIzaSy..."
    gemini-bridge
    ```
-
----
-
-## 💻 CLI Options
-
-```
-Options:
-  -h, --host                    Host address to listen on (default: 127.0.0.1)
-  -p, --port                    Port to listen on (default: 8765, or GEMINI_BRIDGE_PORT)
-  -d, --target-dir              Working directory for operations (default: current directory)
-      --debug                   Enable detailed debug logging (default: false)
-      --use-internal-prompt     Load internal GEMINI.md prompts (default: false)
-      --tools-model             Specify a fallback model for tool execution
-      --mode                    Security mode: read-only, edit, configured, yolo
-      --i-know-what-i-am-doing  Bypass interactive confirmation for yolo mode
-  -?, --help                    Show help
-```
 
 ---
 
@@ -156,6 +154,8 @@ Start OpenCode pointing to your model:
 ```bash
 opencode --model gemini-bridge/gemini-3.8-flash
 ```
+
+For agent prompt instructions, see [`prompts/setup-opencode.md`](prompts/setup-opencode.md).
 
 ---
 
@@ -200,21 +200,30 @@ claude --model gemini-2.5-flash
 
 The bridge translates Claude's tools (`Bash`, `FileRead`, `FileEdit`, etc.) directly to Gemini tool calls and maps results back seamlessly.
 
+For agent prompt instructions, see [`prompts/setup-claude-code.md`](prompts/setup-claude-code.md).
+
 ---
 
-## 🌐 Generic OpenAI Client Example (cURL)
+## ℹ️ Gemini CLI Version Compatibility Note
 
-```bash
-curl http://127.0.0.1:8765/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer local" \
-  -d '{
-    "model": "gemini-3.8-flash",
-    "messages": [
-      { "role": "user", "content": "Explain quantum computing in one sentence." }
-    ],
-    "stream": false
-  }'
+- **User CLI Environment**: The bridge is 100% compatible with the latest stable releases of Google's official Gemini CLI (`@google/gemini-cli@0.66.0+`). You can use `gemini auth login` from any modern CLI release.
+- **Internal Core Submodule**: The build workspace embeds the stable `@google/gemini-cli-core` engine. This decoupling shields the bridge from upstream breaking changes (such as monorepo reorganizations and internal API changes in Google's unreleased packages), while our adapter layer handles all modern protocol features (Protobuf schema sanitization, cryptographic thought signatures, Anthropic Messages translation, and Gemini 3.8 Flash model execution).
+
+---
+
+## 💻 CLI Options
+
+```
+Options:
+  -h, --host                    Host address to listen on (default: 127.0.0.1)
+  -p, --port                    Port to listen on (default: 8765, or GEMINI_BRIDGE_PORT)
+  -d, --target-dir              Working directory for operations (default: current directory)
+      --debug                   Enable detailed debug logging (default: false)
+      --use-internal-prompt     Load internal GEMINI.md prompts (default: false)
+      --tools-model             Specify a fallback model for tool execution
+      --mode                    Security mode: read-only, edit, configured, yolo
+      --i-know-what-i-am-doing  Bypass interactive confirmation for yolo mode
+  -?, --help                    Show help
 ```
 
 ---

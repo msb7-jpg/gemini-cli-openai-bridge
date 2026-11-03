@@ -1,0 +1,80 @@
+name: Publish Packages
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  publish-github-packages:
+    name: Publish to GitHub Packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@msb7-jpg'
+
+      - name: Install dependencies & Build
+        run: |
+          npm run build
+          npm test
+
+      - name: Configure package for GitHub Packages & Publish
+        run: |
+          cd gemini-cli/packages/bridge-server
+          # Update package name to match GitHub scope @msb7-jpg
+          node -e '
+            const pkg = require("./package.json");
+            pkg.name = "@msb7-jpg/gemini-cli-openai-bridge";
+            pkg.publishConfig = { registry: "https://npm.pkg.github.com" };
+            require("fs").writeFileSync("./package.json", JSON.stringify(pkg, null, 2));
+          '
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm:
+    name: Publish to npm Registry
+    runs-on: ubuntu-latest
+    needs: publish-github-packages
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies & Build
+        run: |
+          npm run build
+          npm test
+
+      - name: Publish to npm registry (if NPM_TOKEN is configured)
+        if: env.NPM_TOKEN != ''
+        run: |
+          cd gemini-cli/packages/bridge-server
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

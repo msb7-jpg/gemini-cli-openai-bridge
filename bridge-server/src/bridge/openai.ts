@@ -12,6 +12,10 @@ import {
 import { mapErrorToOpenAIError } from '../utils/error-mapper.js';
 import { logger } from '../utils/logger.js';
 import { randomUUID } from 'node:crypto';
+import {
+  thoughtSignatureCache,
+  lastThoughtSignatureByTool,
+} from '../utils/thought-signature-cache.js';
 
 export function createOpenAIRouter(config: Config, debugMode = false): Router {
   const router = Router();
@@ -106,6 +110,16 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
             fullTextContent += chunk.data;
           } else if (chunk.type === 'tool_code' && chunk.data) {
             const toolCallId = `call_${chunk.data.name}_${randomUUID()}`;
+            if (chunk.data.thoughtSignature) {
+              thoughtSignatureCache.set(
+                toolCallId,
+                chunk.data.thoughtSignature,
+              );
+              lastThoughtSignatureByTool.set(
+                chunk.data.name,
+                chunk.data.thoughtSignature,
+              );
+            }
             toolCalls.push({
               id: toolCallId,
               type: 'function',

@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import {
+  thoughtSignatureCache,
+  lastThoughtSignatureByTool,
+} from '../utils/thought-signature-cache.js';
 import { type StreamChunk } from '../types.js';
 
 // --- OpenAI Response Interfaces ---
@@ -88,9 +92,13 @@ export function createOpenAIStreamTransformer(
           break;
 
         case 'tool_code': {
-          const { name, args } = chunk.data;
+          const { name, args, thoughtSignature } = chunk.data;
           // IMPORTANT: Embed the function name in the ID so it can be parsed when a tool response is received.
           const toolCallId = `call_${name}_${randomUUID()}`;
+          if (thoughtSignature) {
+            thoughtSignatureCache.set(toolCallId, thoughtSignature);
+            lastThoughtSignatureByTool.set(name, thoughtSignature);
+          }
 
           // OpenAI streaming tool calls need to be sent in chunks.
           // 1. Send the chunk containing the function name.

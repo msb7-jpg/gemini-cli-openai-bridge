@@ -21,29 +21,166 @@ import {
   type ReasoningData,
 } from './types.js';
 import { logger } from './utils/logger.js';
+import {
+  thoughtSignatureCache,
+  lastThoughtSignatureByTool,
+} from './utils/thought-signature-cache.js';
+
+const ALLOWED_GEMINI_SCHEMA_KEYS = new Set([
+  'type',
+  'format',
+  'title',
+  'description',
+  'nullable',
+  'enum',
+  'maxItems',
+  'minItems',
+  'properties',
+  'required',
+  'propertyOrdering',
+  'items',
+  'maximum',
+  'minimum',
+  'maxLength',
+  'minLength',
+  'maxProperties',
+  'minProperties',
+  'pattern',
+  'example',
+  'anyOf',
+  'default',
+]);
 
 /**
  * Recursively removes fields from a JSON schema that are not supported by the
- * Gemini API.
+ * Gemini API and maps common JSON Schema / OpenAPI 3.1 constructs to Gemini Schema.
  * @param schema The JSON schema to sanitize.
  * @returns A new schema object without the unsupported fields.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function sanitizeGeminiSchema(schema: any): any {
+export function sanitizeGeminiSchema(schema: any): any {
   if (typeof schema !== 'object' || schema === null) {
     return schema;
   }
 
+  if (Array.isArray(schema)) {
+    return schema.map(sanitizeGeminiSchema);
+  }
+
   // Create a new object, filtering out unsupported keys at the current level.
   const newSchema: { [key: string]: any } = {};
+
+  // Extract / convert numeric bounds
+  let minimum = schema.minimum;
+  let maximum = schema.maximum;
+
+  if (typeof schema.exclusiveMinimum === 'number' && minimum === undefined) {
+    minimum =
+      schema.type === 'integer'
+        ? schema.exclusiveMinimum + 1
+        : schema.exclusiveMinimum;
+  }
+  if (typeof schema.exclusiveMaximum === 'number' && maximum === undefined) {
+    maximum =
+      schema.type === 'integer'
+        ? schema.exclusiveMaximum - 1
+        : schema.exclusiveMaximum;
+  }
+
+  // Handle allOf by merging properties if possible
+  const mergedProperties = { ...(schema.properties || {}) };
+  let mergedRequired = Array.isArray(schema.required)
+    ? [...schema.required]
+    : undefined;
+  if (Array.isArray(schema.allOf)) {
+    for (const sub of schema.allOf) {
+      if (typeof sub === 'object' && sub !== null) {
+        const sanitizedSub = sanitizeGeminiSchema(sub);
+        if (sanitizedSub.properties) {
+          Object.assign(mergedProperties, sanitizedSub.properties);
+        }
+        if (Array.isArray(sanitizedSub.required)) {
+          mergedRequired = [
+            ...(mergedRequired || []),
+            ...sanitizedSub.required,
+          ];
+        }
+      }
+    }
+  }
+
+  // Convert oneOf to anyOf
+  let anyOf = schema.anyOf;
+  if (!anyOf && Array.isArray(schema.oneOf)) {
+    anyOf = schema.oneOf;
+  }
+
+  // Convert const to enum
+  let enumValues = schema.enum;
+  if (!enumValues && schema.const !== undefined) {
+    enumValues = [schema.const];
+  }
+
+  // Populate allowed keys only
   for (const key in schema) {
-    if (key !== '$schema' && key !== 'additionalProperties') {
+    if (ALLOWED_GEMINI_SCHEMA_KEYS.has(key)) {
       newSchema[key] = schema[key];
     }
   }
 
-  // Recurse into nested 'properties' and 'items'.
-  if (newSchema.properties) {
+  if (Object.keys(mergedProperties).length > 0) {
+    newSchema.properties = mergedProperties;
+  }
+  if (mergedRequired && mergedRequired.length > 0) {
+    newSchema.required = mergedRequired;
+  }
+  if (minimum !== undefined) {
+    newSchema.minimum = minimum;
+  }
+  if (maximum !== undefined) {
+    newSchema.maximum = maximum;
+  }
+  if (anyOf !== undefined) {
+    newSchema.anyOf = anyOf;
+  }
+  if (enumValues !== undefined) {
+    newSchema.enum = enumValues;
+  }
+
+  // Handle type array (e.g. ["string", "null"])
+  if (Array.isArray(newSchema.type)) {
+    if (newSchema.type.includes('null')) {
+      newSchema.nullable = true;
+      const nonNullType = newSchema.type.find((t: any) => t !== 'null');
+      if (nonNullType) {
+        newSchema.type = nonNullType;
+      } else {
+        delete newSchema.type;
+      }
+    } else if (newSchema.type.length > 0) {
+      newSchema.type = newSchema.type[0];
+    }
+  }
+
+  // Ensure enum is string[]
+  if (Array.isArray(newSchema.enum)) {
+    newSchema.enum = newSchema.enum.map((item: any) => String(item));
+  }
+
+  // Ensure required is string[]
+  if (Array.isArray(newSchema.required)) {
+    newSchema.required = newSchema.required.filter(
+      (item: any) => typeof item === 'string',
+    );
+    if (newSchema.required.length === 0) {
+      delete newSchema.required;
+    }
+  } else if (newSchema.required !== undefined) {
+    delete newSchema.required;
+  }
+
+  // Recurse into nested 'properties'
+  if (newSchema.properties && typeof newSchema.properties === 'object') {
     const newProperties: { [key: string]: any } = {};
     for (const key in newSchema.properties) {
       newProperties[key] = sanitizeGeminiSchema(newSchema.properties[key]);
@@ -51,8 +188,21 @@ function sanitizeGeminiSchema(schema: any): any {
     newSchema.properties = newProperties;
   }
 
+  // Recurse into nested 'items'
   if (newSchema.items) {
-    newSchema.items = sanitizeGeminiSchema(newSchema.items);
+    if (Array.isArray(newSchema.items)) {
+      newSchema.items =
+        newSchema.items.length > 0
+          ? sanitizeGeminiSchema(newSchema.items[0])
+          : {};
+    } else {
+      newSchema.items = sanitizeGeminiSchema(newSchema.items);
+    }
+  }
+
+  // Recurse into anyOf
+  if (Array.isArray(newSchema.anyOf)) {
+    newSchema.anyOf = newSchema.anyOf.map(sanitizeGeminiSchema);
   }
 
   return newSchema;
@@ -134,12 +284,21 @@ export class GeminiApiClient {
               // Gemini API's functionCall.args expects an object, not a string.
               // OpenAI's arguments is a JSON string, so it needs to be parsed.
               const argsObject = JSON.parse(toolCall.function.arguments);
-              parts.push({
+              const signature =
+                thoughtSignatureCache.get(toolCall.id) ||
+                lastThoughtSignatureByTool.get(toolCall.function.name);
+
+              const functionCallPart: Part = {
                 functionCall: {
                   name: toolCall.function.name,
                   args: argsObject,
                 },
-              });
+              };
+              if (signature) {
+                (functionCallPart as any).thoughtSignature = signature;
+                (functionCallPart as any).thought_signature = signature;
+              }
+              parts.push(functionCallPart);
             } catch (e) {
               logger.warn(
                 'Failed to parse tool call arguments',
@@ -321,12 +480,17 @@ export class GeminiApiClient {
             yield { type: 'text', data: part.text };
           }
           if (part.functionCall && part.functionCall.name) {
+            const thoughtSignature =
+              (part as any).thoughtSignature ||
+              (part as any).thought_signature ||
+              undefined;
             yield {
               type: 'tool_code',
               data: {
                 name: part.functionCall.name,
                 args:
                   (part.functionCall.args as Record<string, unknown>) ?? {},
+                thoughtSignature,
               },
             };
           }

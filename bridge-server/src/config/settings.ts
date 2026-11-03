@@ -8,7 +8,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { homedir } from 'os';
 import {
-  MCPServerConfig,
   getErrorMessage,
   BugCommandSettings,
   TelemetrySettings,
@@ -42,8 +41,6 @@ export interface Settings {
   excludeTools?: string[];
   toolDiscoveryCommand?: string;
   toolCallCommand?: string;
-  mcpServerCommand?: string;
-  mcpServers?: Record<string, MCPServerConfig>;
   showMemoryUsage?: boolean;
   contextFileName?: string | string[];
   accessibility?: AccessibilitySettings;
@@ -120,10 +117,9 @@ export class LoadedSettings {
   setValue(
     scope: SettingScope,
     key: keyof Settings,
-    value: string | Record<string, MCPServerConfig> | undefined,
+    value: any,
   ): void {
     const settingsFile = this.forScope(scope);
-    // @ts-expect-error - value can be string | Record<string, MCPServerConfig>
     settingsFile.settings[key] = value;
     this._merged = this.computeMergedSettings();
     saveSettings(settingsFile);

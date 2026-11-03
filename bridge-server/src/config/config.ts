@@ -101,8 +101,6 @@ export async function loadServerConfig(
     fileCount = memoryResult.fileCount;
   }
 
-  const mcpServers = mergeMcpServers(settings, extensions);
-
   const sandboxConfig = await loadSandboxConfig(settings, {});
 
   // Priority: CLI arg > env var > fallback env var > default
@@ -124,8 +122,6 @@ export async function loadServerConfig(
     excludeTools: settings.excludeTools || undefined,
     toolDiscoveryCommand: settings.toolDiscoveryCommand,
     toolCallCommand: settings.toolCallCommand,
-    mcpServerCommand: settings.mcpServerCommand,
-    mcpServers,
     userMemory: memoryContent,
     geminiMdFileCount: fileCount,
     approvalMode: ApprovalMode.YOLO,
@@ -160,23 +156,6 @@ export async function loadServerConfig(
   });
 }
 
-function mergeMcpServers(settings: Settings, extensions: Extension[]) {
-  const mcpServers = { ...(settings.mcpServers || {}) };
-  for (const extension of extensions) {
-    Object.entries(extension.config.mcpServers || {}).forEach(
-      ([key, server]) => {
-        if (mcpServers[key]) {
-          logger.warn(
-            `Skipping extension MCP config for server with key "${key}" as it already exists.`,
-          );
-          return;
-        }
-        mcpServers[key] = server;
-      },
-    );
-  }
-  return mcpServers;
-}
 function findEnvFile(startDir: string): string | null {
   let currentDir = path.resolve(startDir);
   while (true) {

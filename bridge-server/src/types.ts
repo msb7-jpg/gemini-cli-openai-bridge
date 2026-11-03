@@ -27,6 +27,7 @@ export interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   /** Can be null when tool_calls are present. */
   content: string | null | MessageContentPart[];
+  name?: string;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string;
 }
@@ -97,7 +98,6 @@ export interface SecurityPolicy {
     allow?: string[];
     deny?: string[];
   };
-  allowMcpProxy?: boolean;
 }
 
 // 定义非流式响应中的 message 对象

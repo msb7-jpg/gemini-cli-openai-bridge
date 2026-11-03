@@ -1,12 +1,12 @@
 {
-  "name": "@intelligentinternet/gemini-cli-mcp-openai-bridge",
-  "version": "0.1.14",
+  "name": "@miguelsb/gemini-cli-openai-bridge",
+  "version": "0.1.15",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
+    "gemini-bridge": "dist/index.js",
     "gemini-cli-bridge": "dist/index.js"
   },
-  "repository": "Intelligent-Internet/gemini-cli-common-bridge",
   "scripts": {
     "build": "node ../../scripts/build_package.js",
     "clean": "rm -rf dist",
@@ -20,7 +20,6 @@
   },
   "dependencies": {
     "@google/gemini-cli-core": "0.1.13",
-    "@modelcontextprotocol/sdk": "^1.13.2",
     "command-exists": "^1.2.9",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",

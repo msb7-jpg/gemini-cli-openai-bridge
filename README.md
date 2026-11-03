@@ -18,15 +18,18 @@ It is specifically tailored for AI coding agents and developer workflows such as
 If you are using an AI coding assistant (such as **OpenCode**, **Claude Code**, **Cursor**, **Aider**, or **Roo Code**), simply copy and paste this prompt:
 
 ```markdown
-Read @SETUP.md and @prompts/setup-opencode.md (or @prompts/setup-claude-code.md).
-Please build the Gemini CLI OpenAI Bridge from source, ensure Google credentials are configured,
-set up the provider configuration in my settings, and verify that the bridge is running.
+Please set up the Gemini CLI OpenAI Bridge by reading the instructions at:
+- Setup Guide: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/SETUP.md
+- OpenCode Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md
+(or Claude Code Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md)
+
+Follow these instructions to clone https://github.com/msb7-jpg/gemini-cli-openai-bridge.git, build from source, link globally, configure my credentials, and verify the integration.
 ```
 
 Dedicated prompt files:
-- 🤖 OpenCode: [`prompts/setup-opencode.md`](prompts/setup-opencode.md)
-- 🎭 Claude Code: [`prompts/setup-claude-code.md`](prompts/setup-claude-code.md)
-- 📋 Comprehensive Setup Guide: [`SETUP.md`](SETUP.md)
+- 🤖 OpenCode: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md)
+- 🎭 Claude Code: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md)
+- 📋 Comprehensive Setup Guide: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/SETUP.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/SETUP.md)
 
 ---
 

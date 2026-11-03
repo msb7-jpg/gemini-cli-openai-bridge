@@ -30,7 +30,13 @@ Build and configure `@miguelsb/gemini-cli-openai-bridge` from source and configu
 ---
 
 ### Step 2: Build from Source
-If this repository is already cloned locally:
+If this repository is not yet cloned locally:
+```bash
+git clone https://github.com/msb7-jpg/gemini-cli-openai-bridge.git
+cd gemini-cli-openai-bridge
+```
+
+Build the project:
 ```bash
 npm install
 npm run build

@@ -86,7 +86,15 @@ async function main() {
     return;
   }
 
+  const isHelpOrVersion =
+    firstArg === 'help' ||
+    rawArgs.includes('--help') ||
+    rawArgs.includes('-?') ||
+    rawArgs.includes('--version') ||
+    rawArgs.includes('-v');
+
   const isForeground =
+    isHelpOrVersion ||
     rawArgs.includes('--foreground') ||
     rawArgs.includes('-f') ||
     rawArgs.includes('--server-process');
@@ -102,8 +110,12 @@ async function main() {
 }
 
 async function startBridgeServer() {
+  const cliVersion = await getCliVersion();
+
   // --- Yargs-based argument parsing ---
   const argv = await yargs(hideBin(process.argv))
+    .version(cliVersion)
+    .alias('version', 'v')
     .command('start', 'Start the bridge server in foreground')
     .command('status', 'Show status of the bridge daemon')
     .command('stop', 'Stop the bridge daemon')
@@ -208,7 +220,6 @@ async function startBridgeServer() {
   const workspaceRoot = process.cwd();
   const settings = loadSettings(workspaceRoot);
   const extensions = loadExtensions(workspaceRoot);
-  const cliVersion = await getCliVersion();
 
   // Determine the final security mode, with CLI args taking precedence over settings.
   const finalMode =
@@ -235,7 +246,9 @@ async function startBridgeServer() {
     targetDir,
   );
 
-  let selectedAuthType = settings.merged.selectedAuthType;
+  let selectedAuthType =
+    settings.merged.selectedAuthType ||
+    (settings.merged as Record<string, any>).security?.auth?.selectedType;
   let authReason = '';
 
   if (selectedAuthType) {

@@ -52,6 +52,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "prepare": "npm run build",
     "prepack": "npm run build"
   },
   "dependencies": {

@@ -19,32 +19,10 @@ import {
   lastThoughtSignatureByTool,
   toolCallNameCache,
 } from '../utils/thought-signature-cache.js';
+import { resolveModelId, SUPPORTED_MODELS } from '../utils/model-resolver.js';
 
 export function resolveAnthropicModel(requestedModel?: string): string {
-  if (!requestedModel) {
-    return process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-  }
-
-  // Strip provider prefixes if present, e.g. "anthropic/gemini-3.8-flash" -> "gemini-3.8-flash"
-  const cleanModel = requestedModel.includes('/')
-    ? requestedModel.split('/').pop()!
-    : requestedModel;
-
-  // If already a gemini model, use directly
-  if (cleanModel.toLowerCase().includes('gemini')) {
-    return cleanModel;
-  }
-
-  // If a Claude model is requested (e.g. claude-3-7-sonnet, claude-sonnet-4-6, claude-3-5-haiku)
-  if (cleanModel.toLowerCase().includes('haiku')) {
-    return 'gemini-2.5-flash';
-  }
-  if (cleanModel.toLowerCase().includes('opus')) {
-    return 'gemini-2.5-pro';
-  }
-
-  // Default Sonnet / others to gemini-3.8-flash
-  return process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+  return resolveModelId(requestedModel);
 }
 
 export function convertAnthropicMessagesToOpenAI(
@@ -340,33 +318,7 @@ export function createAnthropicRouter(config: Config, debugMode = false): Router
   // GET /models
   router.get('/models', (_req: Request, res: Response) => {
     res.json({
-      data: [
-        {
-          id: 'gemini-3.8-flash',
-          display_name: 'Gemini 3.8 Flash',
-          description: 'Google Gemini 3.8 Flash (Thinking Model)',
-        },
-        {
-          id: 'gemini-2.5-flash',
-          display_name: 'Gemini 2.5 Flash',
-          description: 'Google Gemini 2.5 Flash (Fast & Capable)',
-        },
-        {
-          id: 'gemini-2.5-pro',
-          display_name: 'Gemini 2.5 Pro',
-          description: 'Google Gemini 2.5 Pro (Deep Reasoning)',
-        },
-        {
-          id: 'claude-3-7-sonnet',
-          display_name: 'Claude 3.7 Sonnet (Alias -> Gemini 3.8 Flash)',
-          description: 'Alias mapped to Gemini 3.8 Flash',
-        },
-        {
-          id: 'claude-sonnet-4-6',
-          display_name: 'Claude Sonnet 4.6 (Alias -> Gemini 3.8 Flash)',
-          description: 'Alias mapped to Gemini 3.8 Flash',
-        },
-      ],
+      data: SUPPORTED_MODELS,
     });
   });
 

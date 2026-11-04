@@ -17,6 +17,7 @@ import {
   lastThoughtSignatureByTool,
   toolCallNameCache,
 } from '../utils/thought-signature-cache.js';
+import { resolveModelId, SUPPORTED_MODELS } from '../utils/model-resolver.js';
 
 export function createOpenAIRouter(config: Config, debugMode = false): Router {
   const router = Router();
@@ -32,19 +33,21 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
     const startTime = Date.now();
     try {
       const body = req.body as OpenAIChatCompletionRequest;
+      const resolvedModel = resolveModelId(body.model);
 
       logger.info('OpenAI bridge request received', {
         requestId,
         model: body.model,
+        resolvedModel,
         stream: body.stream,
       });
-      logger.debug(debugMode, 'Request body:', { requestId, body });
+      logger.debug(debugMode, 'Request body:', { requestId, body, resolvedModel });
       const stream = body.stream !== false;
 
       const client = new GeminiApiClient(config, debugMode);
 
       const geminiStream = await client.sendMessageStream({
-        model: body.model,
+        model: resolvedModel,
         messages: body.messages,
         tools: body.tools,
         tool_choice: body.tool_choice,
@@ -198,43 +201,7 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
   router.get('/models', (_req, res) => {
     res.json({
       object: 'list',
-      data: [
-        {
-          id: 'gemini-3.8-flash',
-          object: 'model',
-          display_name: 'Gemini 3.8 Flash',
-          description: 'Google Gemini 3.8 Flash (Thinking Model)',
-          owned_by: 'google',
-        },
-        {
-          id: 'gemini-2.5-flash',
-          object: 'model',
-          display_name: 'Gemini 2.5 Flash',
-          description: 'Google Gemini 2.5 Flash (Fast & Capable)',
-          owned_by: 'google',
-        },
-        {
-          id: 'gemini-2.5-pro',
-          object: 'model',
-          display_name: 'Gemini 2.5 Pro',
-          description: 'Google Gemini 2.5 Pro (Deep Reasoning)',
-          owned_by: 'google',
-        },
-        {
-          id: 'claude-3-7-sonnet',
-          object: 'model',
-          display_name: 'Claude 3.7 Sonnet (Alias -> Gemini 3.8 Flash)',
-          description: 'Alias mapped to Gemini 3.8 Flash',
-          owned_by: 'google',
-        },
-        {
-          id: 'claude-sonnet-4-6',
-          object: 'model',
-          display_name: 'Claude Sonnet 4.6 (Alias -> Gemini 3.8 Flash)',
-          description: 'Alias mapped to Gemini 3.8 Flash',
-          owned_by: 'google',
-        },
-      ],
+      data: SUPPORTED_MODELS,
     });
   });
 

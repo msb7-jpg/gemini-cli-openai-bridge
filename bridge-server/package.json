@@ -1,6 +1,6 @@
 {
   "name": "@migueldsbatista/gemini-cli-openai-bridge",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "High-performance OpenAI (/v1/chat/completions) & Anthropic (/v1/messages) bridge for Google Gemini CLI. Tailored for OpenCode, Claude Code, Roo Code & Aider.",
   "type": "module",
   "main": "dist/index.js",

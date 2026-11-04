@@ -26,6 +26,7 @@ import {
   lastThoughtSignatureByTool,
   toolCallNameCache,
 } from './utils/thought-signature-cache.js';
+import { resolveModelId } from './utils/model-resolver.js';
 
 const ALLOWED_GEMINI_SCHEMA_KEYS = new Set([
   'type',
@@ -623,7 +624,8 @@ export class GeminiApiClient {
     const lastMessage = contents.pop()!;
     const history = contents;
 
-    logger.info('Calling Gemini API', { model });
+    const canonicalModel = resolveModelId(model);
+    logger.info('Calling Gemini API', { model: canonicalModel, requestedModel: model });
 
     logger.debug(this.debugMode, 'Sending request to Gemini', {
       historyLength: history.length,
@@ -634,7 +636,7 @@ export class GeminiApiClient {
     const requestConfig = new Proxy(this.config, {
       get(target, prop, receiver) {
         if (prop === 'getModel') {
-          return () => model;
+          return () => canonicalModel;
         }
         return Reflect.get(target, prop, receiver);
       },

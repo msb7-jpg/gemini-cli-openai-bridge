@@ -20,10 +20,95 @@ import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import path from 'path';
 import readline from 'readline';
+import { fileURLToPath } from 'url';
+import {
+  handleStatus,
+  handleStop,
+  handleLogs,
+  startDaemon,
+  removePidFile,
+  writePidFile,
+} from './utils/daemon.js';
+
+const __filename = fileURLToPath(import.meta.url);
+
+async function main() {
+  const rawArgs = hideBin(process.argv);
+  const firstArg = rawArgs[0];
+
+  // Helper to resolve port before deep parsing
+  const resolvePort = () => {
+    const portArg = rawArgs.find(a => a.startsWith('--port=') || a.startsWith('-p='));
+    if (portArg) {
+      return parseInt(portArg.split('=')[1], 10);
+    }
+    const pIdx = rawArgs.indexOf('--port') !== -1 ? rawArgs.indexOf('--port') : rawArgs.indexOf('-p');
+    if (pIdx !== -1 && rawArgs[pIdx + 1]) {
+      return parseInt(rawArgs[pIdx + 1], 10);
+    }
+    return (
+      (process.env.GEMINI_BRIDGE_PORT ? parseInt(process.env.GEMINI_BRIDGE_PORT, 10) : undefined) ??
+      (process.env.GEMINI_PORT ? parseInt(process.env.GEMINI_PORT, 10) : undefined) ??
+      (process.env.GEMINI_MCP_PORT ? parseInt(process.env.GEMINI_MCP_PORT, 10) : undefined) ??
+      8765
+    );
+  };
+
+  const resolveHost = () => {
+    const hostArg = rawArgs.find(a => a.startsWith('--host=') || a.startsWith('-h='));
+    if (hostArg) {
+      return hostArg.split('=')[1];
+    }
+    return '127.0.0.1';
+  };
+
+  // Subcommand dispatch
+  if (firstArg === 'status') {
+    await handleStatus(resolvePort(), resolveHost());
+    process.exit(0);
+  }
+
+  if (firstArg === 'stop') {
+    await handleStop(resolvePort(), resolveHost());
+    process.exit(0);
+  }
+
+  if (firstArg === 'restart') {
+    await handleStop(resolvePort(), resolveHost());
+    await startDaemon(resolvePort(), resolveHost(), rawArgs, __filename);
+    process.exit(0);
+  }
+
+  if (firstArg === 'logs') {
+    const follow = rawArgs.includes('-f') || rawArgs.includes('--follow');
+    handleLogs(follow);
+    if (!follow) process.exit(0);
+    return;
+  }
+
+  const isForeground =
+    rawArgs.includes('--foreground') ||
+    rawArgs.includes('-f') ||
+    rawArgs.includes('--server-process');
+
+  // If invoked with no subcommand or 'start', default to detach daemon unless --foreground is specified
+  if (!isForeground) {
+    await startDaemon(resolvePort(), resolveHost(), rawArgs, __filename);
+    process.exit(0);
+  }
+
+  // Otherwise, run the actual HTTP server process in this process
+  await startBridgeServer();
+}
 
 async function startBridgeServer() {
   // --- Yargs-based argument parsing ---
   const argv = await yargs(hideBin(process.argv))
+    .command('start', 'Start the bridge server in foreground')
+    .command('status', 'Show status of the bridge daemon')
+    .command('stop', 'Stop the bridge daemon')
+    .command('restart', 'Restart the bridge daemon')
+    .command('logs', 'View server logs')
     .option('host', {
       alias: 'h',
       type: 'string',
@@ -68,6 +153,16 @@ async function startBridgeServer() {
       type: 'boolean',
       description:
         "Bypass interactive safety confirmations for 'yolo' mode.",
+      default: false,
+    })
+    .option('foreground', {
+      type: 'boolean',
+      description: 'Run server in the foreground.',
+      default: false,
+    })
+    .option('server-process', {
+      type: 'boolean',
+      hidden: true,
       default: false,
     })
     .help()
@@ -202,6 +297,21 @@ async function startBridgeServer() {
   app.use('/v1', anthropicRouter);
   app.use('/', anthropicRouter);
 
+  // Write PID file if running foreground standalone
+  writePidFile({
+    pid: process.pid,
+    port,
+    host,
+    startTime: Date.now(),
+  });
+
+  const cleanup = () => {
+    removePidFile();
+    process.exit(0);
+  };
+  process.on('SIGTERM', cleanup);
+  process.on('SIGINT', cleanup);
+
   app.listen(port, host, () => {
     logger.info(`Gemini CLI Bridge running:`, {
       host,
@@ -213,8 +323,9 @@ async function startBridgeServer() {
   });
 }
 
-startBridgeServer().catch(error => {
+main().catch(error => {
   logger.error('Failed to start Gemini CLI OpenAI Bridge:', error);
+  removePidFile();
   process.exit(1);
 });
 

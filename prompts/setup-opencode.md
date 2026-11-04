@@ -59,20 +59,75 @@ Ensure the `gemini-bridge` provider is defined under `"provider"`:
   "provider": {
     "gemini-bridge": {
       "npm": "@ai-sdk/openai-compatible",
-      "baseURL": "http://127.0.0.1:8765/v1",
-      "apiKey": "local-bridge",
+      "name": "Gemini Bridge",
+      "options": {
+        "baseURL": "http://127.0.0.1:8765/v1",
+        "apiKey": "local-bridge"
+      },
       "models": {
         "gemini-3.8-flash": {
-          "name": "Gemini 3.8 Flash",
-          "tools": true
+          "name": "Gemini 3.8 Flash (Thinking)",
+          "tool_call": true,
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "gemini-3.5-flash": {
+          "name": "Gemini 3.5 Flash",
+          "tool_call": true,
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "gemini-3.1-flash-lite": {
+          "name": "Gemini 3.1 Flash Lite",
+          "tool_call": true,
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
         },
         "gemini-2.5-pro": {
-          "name": "Gemini 2.5 Pro",
-          "tools": true
+          "name": "Gemini 2.5 Pro (Deep Reasoning)",
+          "tool_call": true,
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
         },
         "gemini-2.5-flash": {
           "name": "Gemini 2.5 Flash",
-          "tools": true
+          "tool_call": true,
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "gemini-2.5-flash-lite": {
+          "name": "Gemini 2.5 Flash Lite",
+          "tool_call": true,
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "gemini-3-flash-preview": {
+          "name": "Gemini 3 Flash Preview",
+          "tool_call": true,
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "gemini-3-pro-preview": {
+          "name": "Gemini 3 Pro Preview",
+          "tool_call": true,
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
         }
       }
     }
@@ -87,14 +142,12 @@ opencode service restart 2>/dev/null || true
 
 ---
 
-### Step 4: Start the Bridge Server
-Start the bridge in background or in a separate terminal:
+### Step 4: Manage the Bridge Daemon
+Start the bridge in background (detached mode):
 ```bash
-gemini-bridge --port=8765
-```
-Or via npm start from the repository:
-```bash
-npm start -- --port=8765
+gemini-bridge          # Starts in background automatically
+gemini-bridge status   # Verify PID, port and health
+gemini-bridge logs     # Check live logs
 ```
 
 ---

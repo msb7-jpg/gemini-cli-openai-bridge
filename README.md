@@ -19,21 +19,21 @@ If you are using an AI coding assistant (such as **OpenCode**, **Claude Code**, 
 
 ```markdown
 Please set up the Gemini CLI OpenAI Bridge by reading the instructions at:
-- Setup Guide: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/SETUP.md
-- OpenCode Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md
-- Claude Code Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md
-- VSCode Copilot Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-vscode.md
-- Zed Editor Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-zed.md
+- Setup Guide: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/setup-legacy.md
+- OpenCode Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/integrations/opencode.md
+- Claude Code Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/integrations/claude-code.md
+- VSCode Copilot Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/integrations/vscode.md
+- Zed Editor Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/integrations/zed.md
 
 Follow these instructions to install @migueldsbatista/gemini-cli-openai-bridge globally, configure my credentials, and verify the integration.
 ```
 
 Dedicated prompt files:
-- 🤖 OpenCode: [prompts/setup-opencode.md](./prompts/setup-opencode.md)
-- 🎭 Claude Code: [prompts/setup-claude-code.md](./prompts/setup-claude-code.md)
-- 💻 VSCode Copilot: [prompts/setup-vscode.md](./prompts/setup-vscode.md)
-- ⚡ Zed Editor: [prompts/setup-zed.md](./prompts/setup-zed.md)
-- 📋 Comprehensive Setup Guide: [SETUP.md](./SETUP.md)
+- 🤖 OpenCode: [docs/integrations/opencode.md](./docs/integrations/opencode.md)
+- 🎭 Claude Code: [docs/integrations/claude-code.md](./docs/integrations/claude-code.md)
+- 💻 VSCode Copilot: [docs/integrations/vscode.md](./docs/integrations/vscode.md)
+- ⚡ Zed Editor: [docs/integrations/zed.md](./docs/integrations/zed.md)
+- 📋 Comprehensive Setup Guide: [docs/setup-legacy.md](./docs/setup-legacy.md)
 
 ---
 
@@ -126,10 +126,10 @@ The bridge seamlessly connects with popular AI coding agents, editors, and devel
 
 Detailed step-by-step setup guides and prompt templates:
 
-- 🤖 **[OpenCode Setup](./prompts/setup-opencode.md)**: Configuration for `~/.config/opencode/opencode.json` using `@ai-sdk/openai-compatible`.
-- 🎭 **[Claude Code Setup](./prompts/setup-claude-code.md)**: Configuration for Anthropic Messages API routing via environment variables.
-- 💻 **[VSCode Copilot Chat Setup](./prompts/setup-vscode.md)**: Configuration for `chatLanguageModels.json` custom endpoints.
-- ⚡ **[Zed Editor Setup](./prompts/setup-zed.md)**: Configuration for Zed `settings.json` under `openai_compatible`.
+- 🤖 **[OpenCode Setup](./docs/integrations/opencode.md)**: Configuration for `~/.config/opencode/opencode.json` using `@ai-sdk/openai-compatible`.
+- 🎭 **[Claude Code Setup](./docs/integrations/claude-code.md)**: Configuration for Anthropic Messages API routing via environment variables.
+- 💻 **[VSCode Copilot Chat Setup](./docs/integrations/vscode.md)**: Configuration for `chatLanguageModels.json` custom endpoints.
+- ⚡ **[Zed Editor Setup](./docs/integrations/zed.md)**: Configuration for Zed `settings.json` under `openai_compatible`.
 
 ---
 

@@ -13,7 +13,56 @@ It is specifically tailored for AI coding agents and developer workflows such as
 
 ---
 
-## ⚡ 1-Click Setup Prompt for AI Agents
+## Table of Contents
+
+- [Features](#features)
+- [API Compatibility](#api-compatibility)
+- [Installing](#installing)
+  - [1-Click Setup Prompt for AI Agents](#1-click-setup-prompt-for-ai-agents)
+  - [Manual Installation](#manual-installation)
+  - [Build from Source](#build-from-source)
+- [Authentication](#authentication)
+- [Integrations](#integrations)
+- [CLI Commands & Daemon Control](#cli-commands--daemon-control)
+  - [Real-Time Quota & Usage Monitoring](#real-time-quota--usage-monitoring)
+- [CLI Options](#cli-options)
+- [Media & Demos](#media--demos)
+- [Differences from the Archived Upstream Project](#differences-from-the-archived-upstream-project)
+- [Gemini CLI Version Compatibility Note](#gemini-cli-version-compatibility-note)
+- [Testing & Development](#testing--development)
+- [License & Attribution](#license--attribution)
+
+---
+
+## Features
+
+- **OpenAI and Anthropic API Parity**: Serves standard `/v1/chat/completions` alongside full Anthropic `/v1/messages` (SSE streaming and non-streaming) with `/health` and Claude connection probes (`/api/hello`). See [API Compatibility](#api-compatibility) and [Integrations](#integrations).
+- **Thought Signature Preservation**: Seamlessly extracts, caches, and preserves `thought_signature` tokens across multi-turn function calls, enabling Gemini reasoning models (such as Gemini 2.5 Flash/Pro and Gemini 3.8 Flash). See [Integrations](#integrations).
+- **Parallel Tool Calling & Turn Parity**: Bundles OpenAI `role: "tool"` responses into Gemini's single `user` turn constraints, matching parts 1:1 and synthesizing fallback responses if any tool call is omitted.
+- **Exhaustive Schema Sanitization**: Translates modern OpenAPI 3.1 and JSON Schema constructs (`exclusiveMinimum`, `exclusiveMaximum`, `const`, `oneOf`, `$schema`, `additionalProperties`) into strict Gemini Protobuf schemas without HTTP 400 errors.
+- **Dynamic Per-Request Model Selection**: Dynamically routes requests according to the model specified in the request payload (`gemini-3.8-flash`, `gemini-2.5-pro`, etc.) rather than forcing a static default.
+- **Real-Time Quota and Usage Tracking**: An in-memory sliding window tracker monitors Requests Per Minute (RPM), Requests Per Day (RPD), and session token consumption with standard OpenAI rate limit headers. See [Real-Time Quota & Usage Monitoring](#real-time-quota--usage-monitoring).
+- **Frictionless Authentication**: Inherits existing Gemini CLI credentials (Google OAuth interactive login) or uses the `GEMINI_API_KEY` environment variable. See [Authentication](#authentication).
+- **Comprehensive Agent & Provider Support**: Out-of-the-box configuration guides and prompt templates for OpenCode, Claude Code, VSCode Copilot Chat, Zed Editor, and more. See [Integrations](#integrations).
+- **Fast CLI Daemon Management**: Sub-100ms background daemon control commands for starting, stopping, restarting, viewing logs, and monitoring status. See [CLI Commands & Daemon Control](#cli-commands--daemon-control).
+
+---
+
+## API Compatibility
+
+| API Specification | Endpoint | Supported Features | Status |
+|---|---|---|---|
+| **OpenAI Chat Completions** | `POST /v1/chat/completions` | SSE streaming, multi-turn tool calling, multimodal vision, reasoning effort | ✓ Supported |
+| **Anthropic Messages** | `POST /v1/messages` | SSE streaming, Claude Code tools (`Bash`, `FileRead`, `FileEdit`), system prompts | ✓ Supported |
+| **Model Discovery** | `GET /v1/models` | OpenAI-compatible model listing and dynamic route discovery | ✓ Supported |
+| **Health & Handshake** | `GET /health`, `GET /api/hello` | Server health status probe and Claude Code connection handshake | ✓ Supported |
+| **Quota & Rate Limits** | `GET /v1/quota`, `GET /v1/usage` | Sliding window RPM/RPD inspection and standard rate limit headers | ✓ Supported |
+
+---
+
+## Installing
+
+### 1-Click Setup Prompt for AI Agents
 
 If you are using an AI coding assistant (such as **OpenCode**, **Claude Code**, **VSCode Copilot**, **Zed**, **Cursor**, **Aider**, or **Roo Code**), simply copy and paste this prompt:
 
@@ -35,54 +84,9 @@ Dedicated prompt files:
 - ⚡ Zed Editor: [docs/integrations/zed.md](./docs/integrations/zed.md)
 - 📋 Comprehensive Setup Guide: [docs/setup-legacy.md](./docs/setup-legacy.md)
 
----
+### Manual Installation
 
-## 📸 Media & Demos
-
-### 1. OpenCode Multi-Turn Autonomous Tool Calls
-OpenCode running complex planning and bash tool execution with `gemini-3.8-flash`:
-![OpenCode Tool Calls](media/opencode-tool-calls-example.png)
-
-### 2. OpenCode Multimodal Vision Analysis
-Gemini thinking models analyzing visual screenshot inputs directly inside OpenCode:
-![OpenCode Vision](media/opencode-vision-example.png)
-
-### 3. Claude Code Running on Gemini 3.8 Flash
-Claude Code transparently operating through our Anthropic Messages API (`/v1/messages`):
-![Claude Code on Gemini](media/claude-example.png)
-
----
-
-## ⚡ Key Capabilities
-
-- 🔄 **OpenAI & Anthropic Parity**: Serves standard `/v1/chat/completions` alongside full Anthropic `/v1/messages` (SSE streaming & non-streaming) with `/health` and Claude connection probes (`/api/hello`).
-- 🧠 **Thought Signature Preservation**: Seamlessly extracts, caches, and preserves `thought_signature` / `thoughtSignature` tokens across multi-turn function calls, enabling Gemini reasoning models (**Gemini 2.5 Flash/Pro**, **Gemini 3.8 Flash**).
-- 🛠️ **Parallel Tool Calling & Turn Parity**: Bundles OpenAI `role: "tool"` responses into Gemini's single `user` turn constraints, matching parts 1:1 and synthesizing fallback responses if any tool call is omitted.
-- 🛡️ **Exhaustive Schema Sanitization**: Translates modern OpenAPI 3.1 / JSON Schema constructs (`exclusiveMinimum`, `exclusiveMaximum`, `const`, `oneOf`, `$schema`, `additionalProperties`) into strict Gemini Protobuf schemas without HTTP 400 errors.
-- 🔀 **Dynamic Per-Request Model Selection**: Dynamically routes requests according to the model specified in the request payload (`gemini-3.8-flash`, `gemini-2.5-pro`, etc.) rather than forcing a static default.
-- 🔑 **Frictionless Authentication**: Inherits existing Gemini CLI credentials (Google OAuth interactive login) or uses the `GEMINI_API_KEY` environment variable.
-
----
-
-## 🆚 Differences from the Archived Upstream Project
-
-The original upstream repository [`Intelligent-Internet/gemini-cli-mcp-openai-bridge`](https://github.com/Intelligent-Internet/gemini-cli-mcp-openai-bridge) was archived in July 2026. This project is a standalone continuation and refactor that addresses critical issues and modern agent requirements:
-
-| Feature / Area | Original Archived Project | `@migueldsbatista/gemini-cli-openai-bridge` |
-|---|---|---|
-| **Anthropic Messages API (`/v1/messages`)** | ❌ Not supported | ✅ **Fully supported**: native integration for **Claude Code** with streaming & tools. |
-| **`thought_signature` Handling** | ❌ Stripped / discarded, breaking multi-turn tool calling with thinking models | ✅ **Cached & injected** across turns via `thoughtSignatureCache`, enabling Gemini 2.5 & 3.x thinking models. |
-| **JSON Schema Sanitization** | ❌ Minimal (only `$schema` & `additionalProperties`), crashing on modern Zod / Effect Schemas | ✅ **Strict whitelist & conversions** (`exclusiveMinimum`, `const` to `enum`, `oneOf` to `anyOf`, type arrays). |
-| **Parallel Tool Calls Parity** | ❌ Mapped 1:1 as separate `user` turns, causing HTTP 400 part mismatch errors | ✅ **Batch grouped** into a single Gemini `user` turn with ordered 1:1 part matching and synthetic fallback. |
-| **Model Routing** | ❌ Hardcoded to default `gemini-2.5-flash` regardless of request `model` | ✅ **Dynamic request Proxy**: routes dynamically to requested model (`gemini-3.8-flash`, `gemini-2.5-pro`, etc.). |
-| **Supported Models** | ❌ Outdated model listing | ✅ Updated with **Gemini 3.8 Flash**, **Gemini 3 Flash/Pro Preview**, and **Gemini 2.5 Pro/Flash**. |
-| **Codebase Architecture** | ⚠️ Heavy MCP proxy bloat that broke under upstream CLI updates | 🚀 **Streamlined & focused**: dedicated HTTP API bridge (OpenAI + Anthropic) with 100% passing test coverage. |
-
----
-
-## 🚀 Installation & Getting Started
-
-### Method 1: Global Install via npm (Recommended)
+Install the bridge globally using npm:
 
 ```bash
 npm install -g @migueldsbatista/gemini-cli-openai-bridge
@@ -93,10 +97,31 @@ Start the bridge daemon:
 gemini-bridge
 ```
 
-### Method 2: Run Directly via npx (Secondary Option)
-
+Alternatively, you can run the bridge directly without global installation via npx:
 ```bash
 npx @migueldsbatista/gemini-cli-openai-bridge --port=8765
+```
+
+### Build from Source
+
+To build and run from source (recommended for developers and contributors):
+
+```bash
+git clone --recurse-submodules https://github.com/msb7-jpg/gemini-cli-openai-bridge.git
+cd gemini-cli-openai-bridge
+npm run install
+npm run build
+npm link
+gemini-bridge
+```
+
+If you previously cloned without submodules, initialize them first:
+```bash
+git submodule update --init --recursive
+npm run install
+npm run build
+npm link
+gemini-bridge
 ```
 
 ---
@@ -130,13 +155,6 @@ Detailed step-by-step setup guides and prompt templates:
 - 🎭 **[Claude Code Setup](./docs/integrations/claude-code.md)**: Configuration for Anthropic Messages API routing via environment variables.
 - 💻 **[VSCode Copilot Chat Setup](./docs/integrations/vscode.md)**: Configuration for `chatLanguageModels.json` custom endpoints.
 - ⚡ **[Zed Editor Setup](./docs/integrations/zed.md)**: Configuration for Zed `settings.json` under `openai_compatible`.
-
----
-
-## ℹ️ Gemini CLI Version Compatibility Note
-
-- **User CLI Environment**: The bridge is 100% compatible with the latest stable releases of Google's official Gemini CLI (`@google/gemini-cli@0.66.0+`). You can use `gemini auth login` from any modern CLI release.
-- **Internal Core Submodule**: The build workspace embeds the stable `@google/gemini-cli-core` engine. This decoupling shields the bridge from upstream breaking changes (such as monorepo reorganizations and internal API changes in Google's unreleased packages), while our adapter layer handles all modern protocol features (Protobuf schema sanitization, cryptographic thought signatures, Anthropic Messages translation, and Gemini 3.8 Flash model execution).
 
 ---
 
@@ -205,6 +223,45 @@ Options:
       --i-know-what-i-am-doing  Bypass interactive confirmation for yolo mode
   -?, --help                    Show help
 ```
+
+---
+
+## 📸 Media & Demos
+
+### 1. OpenCode Multi-Turn Autonomous Tool Calls
+OpenCode running complex planning and bash tool execution with `gemini-3.8-flash`:
+![OpenCode Tool Calls](media/opencode-tool-calls-example.png)
+
+### 2. OpenCode Multimodal Vision Analysis
+Gemini thinking models analyzing visual screenshot inputs directly inside OpenCode:
+![OpenCode Vision](media/opencode-vision-example.png)
+
+### 3. Claude Code Running on Gemini 3.8 Flash
+Claude Code transparently operating through our Anthropic Messages API (`/v1/messages`):
+![Claude Code on Gemini](media/claude-example.png)
+
+---
+
+## 🆚 Differences from the Archived Upstream Project
+
+The original upstream repository [`Intelligent-Internet/gemini-cli-mcp-openai-bridge`](https://github.com/Intelligent-Internet/gemini-cli-mcp-openai-bridge) was archived in July 2026. This project is a standalone continuation and refactor that addresses critical issues and modern agent requirements:
+
+| Feature / Area | Original Archived Project | `@migueldsbatista/gemini-cli-openai-bridge` |
+|---|---|---|
+| **Anthropic Messages API (`/v1/messages`)** | ❌ Not supported | ✅ **Fully supported**: native integration for **Claude Code** with streaming & tools. |
+| **`thought_signature` Handling** | ❌ Stripped / discarded, breaking multi-turn tool calling with thinking models | ✅ **Cached & injected** across turns via `thoughtSignatureCache`, enabling Gemini 2.5 & 3.x thinking models. |
+| **JSON Schema Sanitization** | ❌ Minimal (only `$schema` & `additionalProperties`), crashing on modern Zod / Effect Schemas | ✅ **Strict whitelist & conversions** (`exclusiveMinimum`, `const` to `enum`, `oneOf` to `anyOf`, type arrays). |
+| **Parallel Tool Calls Parity** | ❌ Mapped 1:1 as separate `user` turns, causing HTTP 400 part mismatch errors | ✅ **Batch grouped** into a single Gemini `user` turn with ordered 1:1 part matching and synthetic fallback. |
+| **Model Routing** | ❌ Hardcoded to default `gemini-2.5-flash` regardless of request `model` | ✅ **Dynamic request Proxy**: routes dynamically to requested model (`gemini-3.8-flash`, `gemini-2.5-pro`, etc.). |
+| **Supported Models** | ❌ Outdated model listing | ✅ Updated with **Gemini 3.8 Flash**, **Gemini 3 Flash/Pro Preview**, and **Gemini 2.5 Pro/Flash**. |
+| **Codebase Architecture** | ⚠️ Heavy MCP proxy bloat that broke under upstream CLI updates | 🚀 **Streamlined & focused**: dedicated HTTP API bridge (OpenAI + Anthropic) with 100% passing test coverage. |
+
+---
+
+## ℹ️ Gemini CLI Version Compatibility Note
+
+- **User CLI Environment**: The bridge is 100% compatible with the latest stable releases of Google's official Gemini CLI (`@google/gemini-cli@0.66.0+`). You can use `gemini auth login` from any modern CLI release.
+- **Internal Core Submodule**: The build workspace embeds the stable `@google/gemini-cli-core` engine. This decoupling shields the bridge from upstream breaking changes (such as monorepo reorganizations and internal API changes in Google's unreleased packages), while our adapter layer handles all modern protocol features (Protobuf schema sanitization, cryptographic thought signatures, Anthropic Messages translation, and Gemini 3.8 Flash model execution).
 
 ---
 

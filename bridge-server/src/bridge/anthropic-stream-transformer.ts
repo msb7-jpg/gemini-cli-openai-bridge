@@ -5,6 +5,7 @@ import {
   toolCallNameCache,
 } from '../utils/thought-signature-cache.js';
 import { type StreamChunk } from '../types.js';
+import { globalQuotaTracker } from '../services/quota-tracker.js';
 
 export function createAnthropicStreamTransformer(
   model: string,
@@ -18,6 +19,7 @@ export function createAnthropicStreamTransformer(
   let activeTextBlockIndex: number | null = null;
   let hasToolCalls = false;
   let totalOutputTokens = 0;
+  let finalOutputTokens: number | null = null;
 
   const sendEvent = (
     controller: TransformStreamDefaultController<Uint8Array>,
@@ -138,6 +140,26 @@ export function createAnthropicStreamTransformer(
 
         case 'reasoning':
           break;
+
+        case 'usage':
+          if (chunk.data) {
+            const prompt = chunk.data.promptTokenCount || 0;
+            const completion = chunk.data.candidatesTokenCount || 0;
+            const cached = chunk.data.cachedContentTokenCount || 0;
+            const total = chunk.data.totalTokenCount || (prompt + completion);
+
+            globalQuotaTracker.recordUsage(model, {
+              promptTokens: prompt,
+              completionTokens: completion,
+              cachedTokens: cached,
+              totalTokens: total,
+            });
+
+            if (completion > 0) {
+              finalOutputTokens = completion;
+            }
+          }
+          break;
       }
     },
 
@@ -177,7 +199,7 @@ export function createAnthropicStreamTransformer(
           stop_sequence: null,
         },
         usage: {
-          output_tokens: Math.max(totalOutputTokens, 1),
+          output_tokens: finalOutputTokens ?? Math.max(totalOutputTokens, 1),
         },
       });
 

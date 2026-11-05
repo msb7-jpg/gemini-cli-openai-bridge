@@ -20,6 +20,7 @@ import {
   toolCallNameCache,
 } from '../utils/thought-signature-cache.js';
 import { resolveModelId, SUPPORTED_MODELS } from '../utils/model-resolver.js';
+import { globalQuotaTracker } from '../services/quota-tracker.js';
 
 export function resolveAnthropicModel(requestedModel?: string): string {
   return resolveModelId(requestedModel);
@@ -158,6 +159,13 @@ export function createAnthropicRouter(config: Config, debugMode = false): Router
   router.post('/messages', async (req: Request, res: Response) => {
     const requestId = (req as any).requestId;
     const startTime = Date.now();
+    globalQuotaTracker.recordRequestStart();
+
+    // Inject standard rate limit headers
+    const rateHeaders = globalQuotaTracker.getRateLimitHeaders();
+    for (const [headerName, headerVal] of Object.entries(rateHeaders)) {
+      res.setHeader(headerName, headerVal);
+    }
 
     try {
       const body = req.body as AnthropicMessagesRequest;
@@ -230,6 +238,8 @@ export function createAnthropicRouter(config: Config, debugMode = false): Router
         // Non-streaming response
         let textContent = '';
         const toolUseBlocks: AnthropicMessageResponse['content'] = [];
+        let promptTokens = 15;
+        let completionTokens = 1;
 
         for await (const chunk of geminiStream) {
           if (chunk.type === 'text' && chunk.data) {
@@ -247,6 +257,18 @@ export function createAnthropicRouter(config: Config, debugMode = false): Router
               id: toolCallId,
               name,
               input: (args as Record<string, unknown>) ?? {},
+            });
+          } else if (chunk.type === 'usage' && chunk.data) {
+            promptTokens = chunk.data.promptTokenCount || promptTokens;
+            completionTokens = chunk.data.candidatesTokenCount || completionTokens;
+            const cached = chunk.data.cachedContentTokenCount || 0;
+            const total = chunk.data.totalTokenCount || (promptTokens + completionTokens);
+
+            globalQuotaTracker.recordUsage(body.model || targetModel, {
+              promptTokens,
+              completionTokens,
+              cachedTokens: cached,
+              totalTokens: total,
             });
           }
         }
@@ -266,8 +288,8 @@ export function createAnthropicRouter(config: Config, debugMode = false): Router
           stop_reason: toolUseBlocks.length > 0 ? 'tool_use' : 'end_turn',
           stop_sequence: null,
           usage: {
-            input_tokens: 15,
-            output_tokens: Math.max(Math.ceil(textContent.length / 4), 1),
+            input_tokens: promptTokens,
+            output_tokens: Math.max(completionTokens, Math.ceil(textContent.length / 4), 1),
           },
         };
 
@@ -286,13 +308,20 @@ export function createAnthropicRouter(config: Config, debugMode = false): Router
         error: error instanceof Error ? error.message : String(error),
       });
 
-      res.status(500).json({
-        type: 'error',
-        error: {
-          type: 'api_error',
-          message: error instanceof Error ? error.message : 'Internal server error',
-        },
-      });
+      // Track quota/rate-limit error if applicable
+      globalQuotaTracker.recordQuotaError(error);
+
+      if (!res.headersSent) {
+        res.status(500).json({
+          type: 'error',
+          error: {
+            type: 'api_error',
+            message: error instanceof Error ? error.message : 'Internal server error',
+          },
+        });
+      } else {
+        res.end();
+      }
     }
   });
 

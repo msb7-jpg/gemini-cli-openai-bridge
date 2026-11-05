@@ -5,6 +5,7 @@ import {
   toolCallNameCache,
 } from '../utils/thought-signature-cache.js';
 import { type StreamChunk } from '../types.js';
+import { globalQuotaTracker } from '../services/quota-tracker.js';
 
 // --- OpenAI Response Interfaces ---
 interface OpenAIDelta {
@@ -31,6 +32,11 @@ interface OpenAIChunk {
     delta: OpenAIDelta;
     finish_reason: string | null;
   }[];
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  } | null;
 }
 
 // --- New Stateful Transformer ---
@@ -43,23 +49,31 @@ export function createOpenAIStreamTransformer(
   const encoder = new TextEncoder();
   let isFirstChunk = true;
   let toolCallIndex = 0;
+  let usageData: OpenAIChunk['usage'] = null;
 
   const createChunk = (
     delta: OpenAIDelta,
     finish_reason: string | null = null,
-  ): OpenAIChunk => ({
-    id: chatID,
-    object: 'chat.completion.chunk',
-    created: creationTime,
-    model: model,
-    choices: [
-      {
-        index: 0,
-        delta,
-        finish_reason,
-      },
-    ],
-  });
+    usage: OpenAIChunk['usage'] = null,
+  ): OpenAIChunk => {
+    const chunk: OpenAIChunk = {
+      id: chatID,
+      object: 'chat.completion.chunk',
+      created: creationTime,
+      model: model,
+      choices: [
+        {
+          index: 0,
+          delta,
+          finish_reason,
+        },
+      ],
+    };
+    if (usage) {
+      chunk.usage = usage;
+    }
+    return chunk;
+  };
 
   const enqueueChunk = (
     controller: TransformStreamDefaultController<Uint8Array>,
@@ -140,13 +154,35 @@ export function createOpenAIStreamTransformer(
             console.log(`[Stream Transformer] Ignoring chunk: ${chunk.type}`);
           }
           break;
+
+        case 'usage':
+          if (chunk.data) {
+            const prompt = chunk.data.promptTokenCount || 0;
+            const completion = chunk.data.candidatesTokenCount || 0;
+            const cached = chunk.data.cachedContentTokenCount || 0;
+            const total = chunk.data.totalTokenCount || (prompt + completion);
+
+            globalQuotaTracker.recordUsage(model, {
+              promptTokens: prompt,
+              completionTokens: completion,
+              cachedTokens: cached,
+              totalTokens: total,
+            });
+
+            usageData = {
+              prompt_tokens: prompt,
+              completion_tokens: completion,
+              total_tokens: total,
+            };
+          }
+          break;
       }
     },
 
     flush(controller) {
       // At the end of the stream, send a finish_reason of 'tool_calls' or 'stop'.
       const finish_reason = toolCallIndex > 0 ? 'tool_calls' : 'stop';
-      enqueueChunk(controller, createChunk({}, finish_reason));
+      enqueueChunk(controller, createChunk({}, finish_reason, usageData));
 
       const doneString = `data: [DONE]\n\n`;
       controller.enqueue(encoder.encode(doneString));

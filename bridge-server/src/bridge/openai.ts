@@ -18,6 +18,7 @@ import {
   toolCallNameCache,
 } from '../utils/thought-signature-cache.js';
 import { resolveModelId, SUPPORTED_MODELS } from '../utils/model-resolver.js';
+import { globalQuotaTracker } from '../services/quota-tracker.js';
 
 export function createOpenAIRouter(config: Config, debugMode = false): Router {
   const router = Router();
@@ -31,6 +32,13 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
   router.post('/chat/completions', async (req: Request, res: Response) => {
     const requestId = (req as any).requestId;
     const startTime = Date.now();
+    globalQuotaTracker.recordRequestStart();
+
+    // Inject standard rate limit headers
+    const rateHeaders = globalQuotaTracker.getRateLimitHeaders();
+    for (const [headerName, headerVal] of Object.entries(rateHeaders)) {
+      res.setHeader(headerName, headerVal);
+    }
     try {
       const body = req.body as OpenAIChatCompletionRequest;
       const resolvedModel = resolveModelId(body.model);
@@ -107,6 +115,7 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
         let fullTextContent = '';
         const toolCalls: OpenAIToolCall[] = [];
         let finishReason: OpenAIChatCompletionChoice['finish_reason'] = 'stop';
+        let recordedUsage: OpenAIChatCompletion['usage'] | undefined = undefined;
 
         // 1. In-server aggregation of all stream chunks
         for await (const chunk of geminiStream) {
@@ -133,6 +142,24 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
                 arguments: JSON.stringify(chunk.data.args),
               },
             });
+          } else if (chunk.type === 'usage' && chunk.data) {
+            const prompt = chunk.data.promptTokenCount || 0;
+            const completion = chunk.data.candidatesTokenCount || 0;
+            const cached = chunk.data.cachedContentTokenCount || 0;
+            const total = chunk.data.totalTokenCount || (prompt + completion);
+
+            globalQuotaTracker.recordUsage(body.model, {
+              promptTokens: prompt,
+              completionTokens: completion,
+              cachedTokens: cached,
+              totalTokens: total,
+            });
+
+            recordedUsage = {
+              prompt_tokens: prompt,
+              completion_tokens: completion,
+              total_tokens: total,
+            };
           }
         }
 
@@ -163,7 +190,7 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
               finish_reason: finishReason,
             },
           ],
-          // usage is omitted as it's not available from Gemini streaming response.
+          usage: recordedUsage,
         };
 
         const durationMs = Date.now() - startTime;
@@ -182,6 +209,9 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
         requestId,
         durationMs,
       });
+
+      // Track quota/rate-limit error if applicable
+      globalQuotaTracker.recordQuotaError(e);
 
       // 调用新的错误映射函数
       const { openAIError, statusCode } = mapErrorToOpenAIError(e);

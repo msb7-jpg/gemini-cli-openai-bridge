@@ -68,6 +68,15 @@ export type StreamChunk =
         args: Record<string, unknown>;
         thoughtSignature?: string;
       };
+    }
+  | {
+      type: 'usage';
+      data: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        cachedContentTokenCount?: number;
+        totalTokenCount?: number;
+      };
     };
 
 /**

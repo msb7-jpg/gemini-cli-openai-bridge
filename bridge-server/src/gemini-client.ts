@@ -686,6 +686,9 @@ export class GeminiApiClient {
     // Transform the event stream to a simpler StreamChunk stream
     return (async function* (): AsyncGenerator<StreamChunk> {
       for await (const response of geminiStream) {
+        if ((response as any).usageMetadata) {
+          yield { type: 'usage', data: (response as any).usageMetadata };
+        }
         const parts = response.candidates?.[0]?.content?.parts || [];
         for (const part of parts) {
           if (part.text) {

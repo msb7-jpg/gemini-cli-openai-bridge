@@ -160,30 +160,30 @@ export async function handleStatus(port: number, host = '127.0.0.1'): Promise<vo
   const health = await checkBridgeHealth(effectivePort, effectiveHost);
 
   if (pidInfo && isPidRunning(pidInfo.pid) && health.ok) {
-    console.log(green(`${bold('● Gemini Bridge')} está ${bold('ATIVO')} (Online)`));
+    console.log(green(`${bold('● Gemini Bridge')} is ${bold('ACTIVE')} (Online)`));
     console.log(`  ${cyan('PID:')}       ${pidInfo.pid}`);
-    console.log(`  ${cyan('Porta:')}     ${effectivePort}`);
+    console.log(`  ${cyan('Port:')}      ${effectivePort}`);
     console.log(`  ${cyan('Uptime:')}    ${formatUptime(pidInfo.startTime)}`);
     if (health.version) {
-      console.log(`  ${cyan('Versão:')}    ${health.version}`);
+      console.log(`  ${cyan('Version:')}   ${health.version}`);
     }
     console.log(`  ${cyan('OpenAI:')}    http://${effectiveHost}:${effectivePort}/v1/chat/completions`);
     console.log(`  ${cyan('Anthropic:')} http://${effectiveHost}:${effectivePort}/v1/messages`);
     console.log(`  ${cyan('Models:')}    http://${effectiveHost}:${effectivePort}/v1/models`);
     console.log(`  ${cyan('Logs:')}      ${LOG_FILE}`);
     console.log('');
-    console.log(dim(`Comandos: 'gemini-bridge quota' | 'gemini-bridge stop' | 'gemini-bridge restart' | 'gemini-bridge logs'`));
+    console.log(dim(`Commands: 'gemini-bridge quota' | 'gemini-bridge stop' | 'gemini-bridge restart' | 'gemini-bridge logs'`));
   } else if (health.ok) {
     // Process running without PID file or orphan
-    console.log(yellow(`${bold('● Gemini Bridge')} está respondendo na porta ${effectivePort}, mas sem registro PID recente.`));
+    console.log(yellow(`${bold('● Gemini Bridge')} is responding on port ${effectivePort}, but without a recent PID record.`));
     console.log(`  ${cyan('OpenAI:')}    http://${effectiveHost}:${effectivePort}/v1/chat/completions`);
   } else {
     // Stale PID cleanup
     if (pidInfo && !isPidRunning(pidInfo.pid)) {
       removePidFile();
     }
-    console.log(red(`${bold('○ Gemini Bridge')} está ${bold('INATIVO')}`));
-    console.log(dim(`Para iniciar em segundo plano execute: ${bold('gemini-bridge')} ou ${bold('gemini-bridge start')}`));
+    console.log(red(`${bold('○ Gemini Bridge')} is ${bold('INACTIVE')}`));
+    console.log(dim(`To start in background run: ${bold('gemini-bridge')} or ${bold('gemini-bridge start')}`));
   }
 }
 
@@ -194,18 +194,18 @@ export async function handleStop(port: number, host = '127.0.0.1'): Promise<void
     const health = await checkBridgeHealth(port, host, 500);
     if (!health.ok) {
       removePidFile();
-      console.log(yellow('○ Gemini Bridge já se encontra inativo.'));
+      console.log(yellow('○ Gemini Bridge is already inactive.'));
       return;
     }
   }
 
   const pid = pidInfo?.pid;
   if (!pid) {
-    console.log(yellow(`⚠ Não foi possível determinar o PID do Gemini Bridge na porta ${port}.`));
+    console.log(yellow(`⚠ Could not determine Gemini Bridge PID on port ${port}.`));
     return;
   }
 
-  console.log(`Encerrando Gemini Bridge (PID ${pid})...`);
+  console.log(`Shutting down Gemini Bridge (PID ${pid})...`);
   try {
     process.kill(pid, 'SIGTERM');
   } catch (err) {
@@ -224,7 +224,7 @@ export async function handleStop(port: number, host = '127.0.0.1'): Promise<void
 
   // Force kill if necessary
   if (!exited && isPidRunning(pid)) {
-    console.log(yellow(`Forçando encerramento (SIGKILL) do PID ${pid}...`));
+    console.log(yellow(`Force killing (SIGKILL) PID ${pid}...`));
     try {
       process.kill(pid, 'SIGKILL');
     } catch {
@@ -233,12 +233,12 @@ export async function handleStop(port: number, host = '127.0.0.1'): Promise<void
   }
 
   removePidFile();
-  console.log(green(`✓ Gemini Bridge encerrado com sucesso.`));
+  console.log(green(`✓ Gemini Bridge stopped successfully.`));
 }
 
 export function handleLogs(follow = false, lines = 40): void {
   if (!fs.existsSync(LOG_FILE)) {
-    console.log(yellow(`Arquivo de log ainda não existe em ${LOG_FILE}`));
+    console.log(yellow(`Log file does not exist yet at ${LOG_FILE}`));
     return;
   }
 
@@ -248,7 +248,7 @@ export function handleLogs(follow = false, lines = 40): void {
   console.log(displayLines);
 
   if (follow) {
-    console.log(dim('\n--- Acompanhando logs em tempo real (Ctrl+C para sair) ---'));
+    console.log(dim('\n--- Following logs in real time (Ctrl+C to exit) ---'));
     let currentSize = fs.statSync(LOG_FILE).size;
     fs.watchFile(LOG_FILE, { interval: 500 }, (curr) => {
       if (curr.size > currentSize) {
@@ -277,9 +277,9 @@ export async function startDaemon(
   if (pidInfo && isPidRunning(pidInfo.pid)) {
     const health = await checkBridgeHealth(pidInfo.port, pidInfo.host, 1000);
     if (health.ok) {
-      console.log(green(`${bold('● Gemini Bridge')} já está em execução!`));
+      console.log(green(`${bold('● Gemini Bridge')} is already running!`));
       console.log(`  ${cyan('PID:')}       ${pidInfo.pid}`);
-      console.log(`  ${cyan('Porta:')}     ${pidInfo.port}`);
+      console.log(`  ${cyan('Port:')}      ${pidInfo.port}`);
       console.log(`  ${cyan('Uptime:')}    ${formatUptime(pidInfo.startTime)}`);
       console.log(`  ${cyan('OpenAI:')}    http://${pidInfo.host}:${pidInfo.port}/v1/chat/completions`);
       console.log(`  ${cyan('Anthropic:')} http://${pidInfo.host}:${pidInfo.port}/v1/messages`);
@@ -291,7 +291,7 @@ export async function startDaemon(
   // Also check if port is currently responding
   const currentHealth = await checkBridgeHealth(port, host, 800);
   if (currentHealth.ok) {
-    console.log(green(`${bold('● Gemini Bridge')} já está ativo e respondendo na porta ${port}.`));
+    console.log(green(`${bold('● Gemini Bridge')} is already active and responding on port ${port}.`));
     return;
   }
 
@@ -315,7 +315,7 @@ export async function startDaemon(
     '--foreground',
   ];
 
-  const spinner = new TerminalSpinner('Iniciando Gemini Bridge e autenticando');
+  const spinner = new TerminalSpinner('Starting Gemini Bridge and authenticating');
   spinner.start();
 
   const child = spawn(process.execPath, childArgs, {
@@ -327,7 +327,7 @@ export async function startDaemon(
   const childPid = child.pid;
   if (!childPid) {
     spinner.stop(true);
-    console.error(red('Falha ao spawnar processo do bridge.'));
+    console.error(red('Failed to spawn bridge process.'));
     process.exit(1);
   }
 
@@ -359,11 +359,11 @@ export async function startDaemon(
   spinner.stop(true);
 
   if (online) {
-    console.log(green(`${bold('✓ Gemini Bridge iniciado com sucesso (detached)!')}`));
+    console.log(green(`${bold('✓ Gemini Bridge started successfully (detached)!')}`));
     console.log(`  ${cyan('PID:')}       ${childPid}`);
-    console.log(`  ${cyan('Porta:')}     ${port}`);
+    console.log(`  ${cyan('Port:')}      ${port}`);
     if (version) {
-      console.log(`  ${cyan('Versão:')}    ${version}`);
+      console.log(`  ${cyan('Version:')}   ${version}`);
     }
     console.log(`  ${cyan('OpenAI:')}    http://${host}:${port}/v1/chat/completions`);
     console.log(`  ${cyan('Anthropic:')} http://${host}:${port}/v1/messages`);
@@ -371,16 +371,16 @@ export async function startDaemon(
     console.log(`  ${cyan('Quota:')}     http://${host}:${port}/v1/quota`);
     console.log(`  ${cyan('Logs:')}      ${LOG_FILE}`);
     console.log('');
-    console.log(dim(`Comandos úteis:`));
-    console.log(dim(`  gemini-bridge status   (verificar status)`));
-    console.log(dim(`  gemini-bridge quota    (verificar consumo e cota)`));
-    console.log(dim(`  gemini-bridge stop     (parar o servidor)`));
-    console.log(dim(`  gemini-bridge restart  (reiniciar o servidor)`));
-    console.log(dim(`  gemini-bridge logs     (visualizar logs)`));
+    console.log(dim(`Useful commands:`));
+    console.log(dim(`  gemini-bridge status   (check status)`));
+    console.log(dim(`  gemini-bridge quota    (check usage and quota)`));
+    console.log(dim(`  gemini-bridge stop     (stop server)`));
+    console.log(dim(`  gemini-bridge restart  (restart server)`));
+    console.log(dim(`  gemini-bridge logs     (view logs)`));
   } else {
-    console.error(red(`❌ O servidor não respondeu a tempo ou encerrou inesperadamente.`));
+    console.error(red(`❌ The server did not respond in time or exited unexpectedly.`));
     if (fs.existsSync(LOG_FILE)) {
-      console.error(yellow('\nÚltimas linhas de log:'));
+      console.error(yellow('\nLast log lines:'));
       handleLogs(false, 15);
     }
     removePidFile();
@@ -424,20 +424,20 @@ export function renderQuotaDashboard(data: any, host: string, port: number): voi
   if (rpm) {
     const rpmBar = renderProgressBar(rpm.used, rpm.limit, 20);
     console.log(`  ${bold('Requests Per Minute (RPM):')}`);
-    console.log(`    ${rpmBar} ${bold(`${rpm.used}/${rpm.limit}`)} reqs  ${dim(`(${rpm.remaining} restantes nesta janela)`)}`);
+    console.log(`    ${rpmBar} ${bold(`${rpm.used}/${rpm.limit}`)} reqs  ${dim(`(${rpm.remaining} remaining in this window)`)}`);
   }
 
   const rpd = data.requests?.rpd;
   if (rpd) {
     const rpdBar = renderProgressBar(rpd.used, rpd.limit, 20);
     console.log(`  ${bold('Requests Per Day (RPD):')}`);
-    console.log(`    ${rpdBar} ${bold(`${rpd.used}/${rpd.limit}`)} reqs  ${dim(`(${rpd.remaining} restantes hoje)`)}`);
+    console.log(`    ${rpdBar} ${bold(`${rpd.used}/${rpd.limit}`)} reqs  ${dim(`(${rpd.remaining} remaining today)`)}`);
   }
 
   console.log('');
   const tokens = data.tokens;
   if (tokens) {
-    console.log(`  ${bold('Tokens Consumidos (Sessão):')}`);
+    console.log(`  ${bold('Tokens Consumed (Session):')}`);
     console.log(`    ${cyan('Prompt:')}     ${(tokens.promptTokens || 0).toLocaleString()} tokens`);
     console.log(`    ${cyan('Candidate:')}  ${(tokens.completionTokens || 0).toLocaleString()} tokens`);
     if (tokens.cachedTokens) {
@@ -448,9 +448,9 @@ export function renderQuotaDashboard(data: any, host: string, port: number): voi
 
   if (data.proQuotaExceeded) {
     console.log('');
-    console.log(yellow(`  ⚠️  ${bold('Cota Pro Esgotada:')} As requisições serão roteadas para o modelo fallback (ex: Flash).`));
+    console.log(yellow(`  ⚠️  ${bold('Pro Quota Exceeded:')} Requests will be routed to fallback model (e.g. Flash).`));
     if (data.retryAfterSeconds > 0) {
-      console.log(yellow(`     Tempo estimado para recuperação: ${bold(`${data.retryAfterSeconds}s`)}`));
+      console.log(yellow(`     Estimated recovery time: ${bold(`${data.retryAfterSeconds}s`)}`));
     }
   }
 
@@ -483,7 +483,7 @@ export function renderQuotaDashboard(data: any, host: string, port: number): voi
 
   if (data.byModel && Object.keys(data.byModel).length > 0) {
     console.log('');
-    console.log(`  ${bold('Consumo por Modelo (Nesta Sessão do Bridge):')}`);
+    console.log(`  ${bold('Usage by Model (This Bridge Session):')}`);
     for (const [m, mStats] of Object.entries<any>(data.byModel)) {
       console.log(`    • ${bold(m)}: ${mStats.requests} reqs, ${(mStats.tokens?.totalTokens || 0).toLocaleString()} tokens`);
     }
@@ -506,7 +506,7 @@ export async function handleQuota(port: number, host = '127.0.0.1'): Promise<voi
     clearTimeout(timer);
 
     if (!res.ok) {
-      console.log(red(`Erro ao consultar cota: HTTP ${res.status} ${res.statusText}`));
+      console.log(red(`Error querying quota: HTTP ${res.status} ${res.statusText}`));
       return;
     }
 
@@ -515,10 +515,10 @@ export async function handleQuota(port: number, host = '127.0.0.1'): Promise<voi
   } catch {
     const health = await checkBridgeHealth(effectivePort, effectiveHost, 500);
     if (!health.ok) {
-      console.log(red(`${bold('○ Gemini Bridge')} está ${bold('INATIVO')}`));
-      console.log(dim(`Para iniciar o bridge execute: ${bold('gemini-bridge')}`));
+      console.log(red(`${bold('○ Gemini Bridge')} is ${bold('INACTIVE')}`));
+      console.log(dim(`To start the bridge run: ${bold('gemini-bridge')}`));
     } else {
-      console.log(yellow(`O servidor está respondendo na porta ${effectivePort}, mas o endpoint /v1/quota não está disponível.`));
+      console.log(yellow(`The server is responding on port ${effectivePort}, but endpoint /v1/quota is not available.`));
     }
   }
 }

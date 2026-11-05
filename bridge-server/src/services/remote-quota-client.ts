@@ -1,0 +1,255 @@
+/**
+ * @license
+ * Copyright 2026 Miguel de Sousa Batista
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+
+export interface RemoteModelQuota {
+  modelId: string;
+  name?: string;
+  tier?: 'Flash' | 'Flash Lite' | 'Pro' | string;
+  tokenType: string;
+  remainingFraction: number;
+  remainingPercentage: number;
+  usedPercentage: number;
+  remainingAmount?: number;
+  limit?: number;
+  resetTime?: string;
+  resetsIn?: string;
+  includedModels?: string[];
+}
+
+export interface RemoteQuotaResponse {
+  buckets?: Array<{
+    resetTime?: string;
+    tokenType?: string;
+    modelId?: string;
+    remainingFraction?: number;
+    remainingAmount?: string | number;
+  }>;
+}
+
+export function formatResetTime(resetTimeIso: string): string {
+  try {
+    const resetDate = new Date(resetTimeIso);
+    if (isNaN(resetDate.getTime())) return '';
+    const diffMs = resetDate.getTime() - Date.now();
+    if (diffMs <= 0) return 'now';
+
+    const totalMinutes = Math.ceil(diffMs / (1000 * 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    const hoursStr = hours > 0 ? `${hours}h` : '';
+    const minutesStr = minutes > 0 ? `${minutes}m` : '';
+    const duration = hoursStr && minutesStr ? `${hoursStr} ${minutesStr}` : hoursStr || minutesStr;
+
+    const timeStr = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: 'numeric',
+    }).format(resetDate);
+
+    return duration ? `${timeStr} (${duration})` : timeStr;
+  } catch {
+    return resetTimeIso;
+  }
+}
+
+export function getModelTier(modelId: string): 'Flash Lite' | 'Flash' | 'Pro' {
+  const lower = modelId.toLowerCase();
+  if (lower.includes('flash-lite') || lower.includes('flash_lite')) {
+    return 'Flash Lite';
+  }
+  if (lower.includes('flash')) {
+    return 'Flash';
+  }
+  return 'Pro';
+}
+
+export class RemoteQuotaClient {
+  private lastFetchTime = 0;
+  private cachedQuotas: RemoteModelQuota[] = [];
+  private cacheTtlMs = 15_000; // cache for 15s to be fast and not spam Google API
+
+  public async fetchRemoteQuotas(): Promise<RemoteModelQuota[]> {
+    const now = Date.now();
+    if (this.cachedQuotas.length > 0 && now - this.lastFetchTime < this.cacheTtlMs) {
+      return this.cachedQuotas;
+    }
+
+    const token = await this.getOAuthAccessToken();
+    if (!token) {
+      return this.cachedQuotas;
+    }
+
+    const projectId = this.resolveProjectId();
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch('https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(projectId ? { project: projectId } : {}),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        return this.cachedQuotas;
+      }
+
+      const data = (await res.json()) as RemoteQuotaResponse;
+      if (!data.buckets || !Array.isArray(data.buckets)) {
+        return this.cachedQuotas;
+      }
+
+      const rawItems: RemoteModelQuota[] = [];
+      for (const bucket of data.buckets) {
+        if (!bucket.modelId || bucket.remainingFraction === undefined) continue;
+
+        const fraction = Math.min(Math.max(bucket.remainingFraction, 0), 1);
+        const usedFraction = 1 - fraction;
+        const usedPercentage = Math.round(usedFraction * 100);
+        const remainingPercentage = 100 - usedPercentage;
+        const resetTime = bucket.resetTime;
+        const resetsIn = resetTime ? formatResetTime(resetTime) : undefined;
+        const tier = getModelTier(bucket.modelId);
+
+        let remainingAmount: number | undefined;
+        let limit: number | undefined;
+
+        if (bucket.remainingAmount !== undefined) {
+          remainingAmount =
+            typeof bucket.remainingAmount === 'number'
+              ? bucket.remainingAmount
+              : parseInt(bucket.remainingAmount, 10);
+          if (fraction > 0 && !isNaN(remainingAmount)) {
+            limit = Math.round(remainingAmount / fraction);
+          }
+        }
+
+        rawItems.push({
+          modelId: bucket.modelId,
+          tier,
+          tokenType: bucket.tokenType || 'REQUESTS',
+          remainingFraction: fraction,
+          remainingPercentage,
+          usedPercentage,
+          remainingAmount,
+          limit,
+          resetTime,
+          resetsIn,
+        });
+      }
+
+      // Group by Tier (like Gemini CLI ModelQuotaDisplay)
+      const tierMap = new Map<string, { tier: string; remainingFraction: number; resetTime?: string; models: string[] }>();
+      for (const item of rawItems) {
+        const t = item.tier || 'Flash';
+        const existing = tierMap.get(t);
+        if (!existing) {
+          tierMap.set(t, {
+            tier: t,
+            remainingFraction: item.remainingFraction,
+            resetTime: item.resetTime,
+            models: [item.modelId],
+          });
+        } else {
+          if (!existing.models.includes(item.modelId)) {
+            existing.models.push(item.modelId);
+          }
+          if (item.remainingFraction < existing.remainingFraction) {
+            existing.remainingFraction = item.remainingFraction;
+            existing.resetTime = item.resetTime;
+          }
+        }
+      }
+
+      const tierSummaryItems: RemoteModelQuota[] = [];
+      const tierOrder = ['Flash', 'Flash Lite', 'Pro'];
+      for (const t of tierOrder) {
+        const group = tierMap.get(t);
+        if (group) {
+          const usedPct = Math.round((1 - group.remainingFraction) * 100);
+          tierSummaryItems.push({
+            modelId: t.toLowerCase().replace(/\s+/g, '-'),
+            name: t,
+            tier: t,
+            tokenType: 'REQUESTS',
+            remainingFraction: group.remainingFraction,
+            remainingPercentage: 100 - usedPct,
+            usedPercentage: usedPct,
+            resetTime: group.resetTime,
+            resetsIn: group.resetTime ? formatResetTime(group.resetTime) : undefined,
+            includedModels: group.models,
+          });
+        }
+      }
+
+      // Return tier summaries as primary items, and raw items appended
+      this.cachedQuotas = [...tierSummaryItems, ...rawItems];
+      this.lastFetchTime = now;
+      return this.cachedQuotas;
+    } catch {
+      return this.cachedQuotas;
+    }
+  }
+
+  private resolveProjectId(): string | undefined {
+    if (process.env.GOOGLE_CLOUD_PROJECT) return process.env.GOOGLE_CLOUD_PROJECT;
+    if (process.env.GOOGLE_CLOUD_PROJECT_ID) return process.env.GOOGLE_CLOUD_PROJECT_ID;
+
+    // Check ~/.zshrc or ~/.bashrc
+    try {
+      const zshrcPath = path.join(os.homedir(), '.zshrc');
+      if (fs.existsSync(zshrcPath)) {
+        const content = fs.readFileSync(zshrcPath, 'utf-8');
+        const match = content.match(/export\s+GOOGLE_CLOUD_PROJECT=["']?([a-zA-Z0-9-_]+)["']?/);
+        if (match && match[1]) return match[1];
+      }
+    } catch {
+      // ignore
+    }
+
+    // Default to moto-gemini-assist if user belongs to Motorola
+    try {
+      const accountsPath = path.join(os.homedir(), '.gemini', 'google_accounts.json');
+      if (fs.existsSync(accountsPath)) {
+        const raw = fs.readFileSync(accountsPath, 'utf-8');
+        const accounts = JSON.parse(raw);
+        if (accounts.active && accounts.active.includes('motorola.com')) {
+          return 'moto-gemini-assist';
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return undefined;
+  }
+
+  private async getOAuthAccessToken(): Promise<string | null> {
+    const credsPath = path.join(os.homedir(), '.gemini', 'oauth_creds.json');
+    try {
+      if (!fs.existsSync(credsPath)) return null;
+      const raw = fs.readFileSync(credsPath, 'utf-8');
+      const creds = JSON.parse(raw);
+      if (creds && typeof creds.access_token === 'string') {
+        return creds.access_token;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+}
+
+export const remoteQuotaClient = new RemoteQuotaClient();

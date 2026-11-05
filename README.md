@@ -9,19 +9,21 @@
 
 `@migueldsbatista/gemini-cli-openai-bridge` provides a high-performance **OpenAI-compatible (`/v1/chat/completions`)** and **Anthropic Messages-compatible (`/v1/messages`)** HTTP API bridge that routes requests directly to Google Gemini models using the official authentication, session management, and execution engine of Google's Gemini CLI.
 
-It is specifically tailored for AI coding agents and developer workflows such as **[OpenCode](https://opencode.ai)**, **Claude Code (`claude`)**, **Aider**, **Roo Code**, **Continue**, and **Open WebUI**.
+It is specifically tailored for AI coding agents and developer workflows such as **[OpenCode](https://opencode.ai)**, **Claude Code (`claude`)**, **VSCode Copilot Chat**, **Zed Editor**, **Aider**, **Roo Code**, **Continue**, and **Open WebUI**.
 
 ---
 
 ## ⚡ 1-Click Setup Prompt for AI Agents
 
-If you are using an AI coding assistant (such as **OpenCode**, **Claude Code**, **Cursor**, **Aider**, or **Roo Code**), simply copy and paste this prompt:
+If you are using an AI coding assistant (such as **OpenCode**, **Claude Code**, **VSCode Copilot**, **Zed**, **Cursor**, **Aider**, or **Roo Code**), simply copy and paste this prompt:
 
 ```markdown
 Please set up the Gemini CLI OpenAI Bridge by reading the instructions at:
 - Setup Guide: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/SETUP.md
 - OpenCode Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md
-(or Claude Code Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md)
+- Claude Code Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md
+- VSCode Copilot Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-vscode.md
+- Zed Editor Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-zed.md
 
 Follow these instructions to clone https://github.com/msb7-jpg/gemini-cli-openai-bridge.git, build from source, link globally, configure my credentials, and verify the integration.
 ```
@@ -29,6 +31,8 @@ Follow these instructions to clone https://github.com/msb7-jpg/gemini-cli-openai
 Dedicated prompt files:
 - 🤖 OpenCode: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md)
 - 🎭 Claude Code: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md)
+- 💻 VSCode Copilot: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-vscode.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-vscode.md)
+- ⚡ Zed Editor: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-zed.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-zed.md)
 - 📋 Comprehensive Setup Guide: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/SETUP.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/SETUP.md)
 
 ---
@@ -267,10 +271,293 @@ For agent prompt instructions, see [`prompts/setup-claude-code.md`](prompts/setu
 
 ---
 
+## 💻 Integration with VSCode Copilot Chat
+
+VSCode supports custom language models via `chatLanguageModels.json`, enabling GitHub Copilot Chat to communicate directly with the Gemini CLI OpenAI Bridge with full support for streaming, multimodal vision, tool calling, inline code edits (`editTools`), and thinking/deep reasoning.
+
+### Configuration (`chatLanguageModels.json`)
+
+Depending on your operating system, locate or create `chatLanguageModels.json`:
+- **Linux**: `~/.config/Code/User/chatLanguageModels.json`
+- **macOS**: `~/Library/Application Support/Code/User/chatLanguageModels.json`
+- **Windows**: `%APPDATA%\Code\User\chatLanguageModels.json`
+
+Add the bridge endpoint configuration under `"customendpoint"` (preserving any existing keys such as `"agent-host-copilotcli"`):
+
+```json
+{
+  "customendpoint": [
+    {
+      "model": "gemini-3.8-flash",
+      "name": "Gemini 3.8 Flash (Thinking)",
+      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
+      "apiKey": "local-bridge",
+      "tools": true,
+      "vision": true,
+      "thinking": true,
+      "editTools": true,
+      "streaming": true,
+      "maxInputTokens": 1048576,
+      "maxOutputTokens": 65536
+    },
+    {
+      "model": "gemini-3-pro-preview",
+      "name": "Gemini 3 Pro Preview",
+      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
+      "apiKey": "local-bridge",
+      "tools": true,
+      "vision": true,
+      "thinking": true,
+      "editTools": true,
+      "streaming": true,
+      "maxInputTokens": 1048576,
+      "maxOutputTokens": 65536
+    },
+    {
+      "model": "gemini-2.5-pro",
+      "name": "Gemini 2.5 Pro (Deep Reasoning)",
+      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
+      "apiKey": "local-bridge",
+      "tools": true,
+      "vision": true,
+      "thinking": true,
+      "editTools": true,
+      "streaming": true,
+      "maxInputTokens": 1048576,
+      "maxOutputTokens": 65536
+    },
+    {
+      "model": "gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
+      "apiKey": "local-bridge",
+      "tools": true,
+      "vision": true,
+      "thinking": true,
+      "editTools": true,
+      "streaming": true,
+      "maxInputTokens": 1048576,
+      "maxOutputTokens": 65536
+    },
+    {
+      "model": "gemini-2.5-flash-lite",
+      "name": "Gemini 2.5 Flash Lite",
+      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
+      "apiKey": "local-bridge",
+      "tools": true,
+      "vision": true,
+      "thinking": false,
+      "editTools": true,
+      "streaming": true,
+      "maxInputTokens": 1048576,
+      "maxOutputTokens": 65536
+    }
+  ]
+}
+```
+
+### Apply and Verify
+1. Start the bridge: `gemini-bridge`
+2. In VSCode, open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run **`Developer: Reload Window`**.
+3. Open Copilot Chat and select your desired Gemini model from the model picker dropdown.
+
+For full agent prompt instructions, see [`prompts/setup-vscode.md`](prompts/setup-vscode.md).
+
+---
+
+## ⚡ Integration with Zed Editor
+
+Zed supports OpenAI-compatible endpoints directly in its `settings.json`, enabling Zed's Assistant panel and Agent mode to communicate directly with the Gemini CLI OpenAI Bridge with full support for streaming, multimodal vision, reasoning effort, and tool execution.
+
+### Configuration (`settings.json`)
+
+Depending on your operating system, locate or edit `settings.json`:
+- **Linux**: `~/.config/zed/settings.json`
+- **macOS**: `~/Library/Application Support/Zed/settings.json`
+
+Add the bridge endpoint configuration under `"language_models"."openai_compatible"`:
+
+```json
+{
+  "language_models": {
+    "openai_compatible": {
+      "Gemini OpenAI Bridge": {
+        "api_url": "http://127.0.0.1:8765/v1",
+        "available_models": [
+          {
+            "name": "gemini-3.8-flash",
+            "display_name": "Gemini 3.8 Flash (Thinking)",
+            "max_tokens": 1048576,
+            "max_output_tokens": 65536,
+            "reasoning_effort": "medium",
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": false,
+              "chat_completions": true,
+              "interleaved_reasoning": false,
+              "max_tokens_parameter": false
+            }
+          },
+          {
+            "name": "gemini-2.5-pro",
+            "display_name": "Gemini 2.5 Pro (Deep Reasoning)",
+            "max_tokens": 1048576,
+            "max_output_tokens": 65536,
+            "reasoning_effort": "high",
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": false,
+              "chat_completions": true,
+              "interleaved_reasoning": false,
+              "max_tokens_parameter": false
+            }
+          },
+          {
+            "name": "gemini-3-pro-preview",
+            "display_name": "Gemini 3 Pro Preview",
+            "max_tokens": 1048576,
+            "max_output_tokens": 65536,
+            "reasoning_effort": "high",
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": false,
+              "chat_completions": true,
+              "interleaved_reasoning": false,
+              "max_tokens_parameter": false
+            }
+          },
+          {
+            "name": "gemini-2.5-flash",
+            "display_name": "Gemini 2.5 Flash",
+            "max_tokens": 1048576,
+            "max_output_tokens": 65536,
+            "reasoning_effort": "medium",
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": false,
+              "chat_completions": true,
+              "interleaved_reasoning": false,
+              "max_tokens_parameter": false
+            }
+          },
+          {
+            "name": "gemini-2.5-flash-lite",
+            "display_name": "Gemini 2.5 Flash Lite",
+            "max_tokens": 1048576,
+            "max_output_tokens": 65536,
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": false,
+              "chat_completions": true,
+              "interleaved_reasoning": false,
+              "max_tokens_parameter": false
+            }
+          }
+        ]
+      }
+    }
+  },
+  "agent": {
+    "favorite_models": [
+      {
+        "provider": "Gemini OpenAI Bridge",
+        "model": "gemini-3.8-flash"
+      },
+      {
+        "provider": "Gemini OpenAI Bridge",
+        "model": "gemini-2.5-pro"
+      },
+      {
+        "provider": "Gemini OpenAI Bridge",
+        "model": "gemini-3-pro-preview"
+      },
+      {
+        "provider": "Gemini OpenAI Bridge",
+        "model": "gemini-2.5-flash"
+      },
+      {
+        "provider": "Gemini OpenAI Bridge",
+        "model": "gemini-2.5-flash-lite"
+      }
+    ]
+  }
+}
+```
+
+### Apply and Verify
+1. Start the bridge: `gemini-bridge`
+2. Open the Assistant panel in Zed (`Ctrl-?` on Linux, `Cmd-?` on macOS).
+3. Select `Gemini 3.8 Flash (Thinking)` or another configured Gemini model from the model selector dropdown.
+
+For full agent prompt instructions, see [`prompts/setup-zed.md`](prompts/setup-zed.md).
+
+---
+
 ## ℹ️ Gemini CLI Version Compatibility Note
 
 - **User CLI Environment**: The bridge is 100% compatible with the latest stable releases of Google's official Gemini CLI (`@google/gemini-cli@0.66.0+`). You can use `gemini auth login` from any modern CLI release.
 - **Internal Core Submodule**: The build workspace embeds the stable `@google/gemini-cli-core` engine. This decoupling shields the bridge from upstream breaking changes (such as monorepo reorganizations and internal API changes in Google's unreleased packages), while our adapter layer handles all modern protocol features (Protobuf schema sanitization, cryptographic thought signatures, Anthropic Messages translation, and Gemini 3.8 Flash model execution).
+
+---
+
+## 💻 CLI Commands & Daemon Control
+
+The bridge provides instant CLI daemon management commands with fast-path execution (< 100ms):
+
+```bash
+gemini-bridge               # Start the bridge daemon in background (with live spinner)
+gemini-bridge status        # Check daemon status, uptime, PID, and active ports
+gemini-bridge quota         # View real-time quota, RPM/RPD limits, and token usage
+gemini-bridge restart       # Restart the background daemon
+gemini-bridge stop          # Stop the running bridge daemon
+gemini-bridge logs          # View recent server log output (-f to follow)
+```
+
+### 📊 Real-Time Quota & Usage Monitoring
+
+Google Gemini does not provide a public pre-request quota remaining API. The bridge implements an in-memory **Sliding Window Quota & Usage Tracker** that:
+- Monitors **Requests Per Minute (RPM)** and **Requests Per Day (RPD)**.
+- Automatically calculates remaining capacity against your auth tier (e.g. 60 RPM / 1,000 RPD for Gemini Code Assist OAuth, or 15 RPM for Free API keys).
+- Captures real `usageMetadata` from Gemini responses (prompt tokens, candidate tokens, and cached tokens).
+- Detects proactive Google HTTP 429 quota exhaustion events (e.g. Pro Quota fallback to Flash) and extracts `Retry-After` windows.
+- Exposes standard OpenAI rate limit headers (`x-ratelimit-remaining-requests`, `x-ratelimit-reset-requests`) on every response.
+- Exposes `GET /v1/quota` (and `GET /v1/usage`) for agent harnesses, dashboards, or scripts.
+
+Example CLI output:
+```
+══════════════════════════════════════════════════════
+  Gemini Bridge Quota & Usage Monitor  (http://127.0.0.1:8765)
+══════════════════════════════════════════════════════
+  Status:         HEALTHY (Normal)
+  Auth Type:      oauth-personal
+  Uptime:         1m 5s
+  Total Requests: 4
+
+  Requests Per Minute (RPM):
+    [█░░░░░░░░░░░░░░░░░░░] 3/60 reqs  (57 restantes nesta janela)
+  Requests Per Day (RPD):
+    [░░░░░░░░░░░░░░░░░░░░] 4/1000 reqs  (996 restantes hoje)
+
+  Tokens Consumidos (Sessão):
+    Prompt:     242,850 tokens
+    Candidate:  68 tokens
+    Cached:     110,591 tokens
+    Total:      242,918 tokens
+
+  Consumo por Modelo:
+    • gemini-3.8-flash: 6 reqs, 242,918 tokens
+══════════════════════════════════════════════════════
+```
 
 ---
 

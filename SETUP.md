@@ -167,6 +167,11 @@ opencode --model gemini-bridge/gemini-3.8-flash
 
 For agent prompt instructions, see [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md).
 
+### 💡 (Optional but Recommended) Multi-Tier Model Router Setup
+Google Gemini accounts partition daily quotas into three separate pools: **Flash Lite**, **Flash**, and **Pro**. To avoid exhausting your Flash quota on routine file searches and grepping, you can configure [`opencode-model-router`](https://github.com/marco-jardim/opencode-model-router) to dynamically route `@fast` tasks to `gemini-3.1-flash-lite`, `@medium` to `gemini-3.8-flash`, and `@heavy` to `gemini-3.1-pro-preview`.
+
+👉 Read the full setup instructions in [**OPENCODE_MODEL_ROUTER_GUIDE.md**](./OPENCODE_MODEL_ROUTER_GUIDE.md).
+
 ---
 
 ## 🎭 4. Claude Code (`claude`) Integration

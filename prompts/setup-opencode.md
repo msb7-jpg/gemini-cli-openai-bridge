@@ -161,3 +161,10 @@ gemini-bridge logs     # Check live logs
    ```bash
    opencode --model gemini-bridge/gemini-3.8-flash "Say hello and confirm you are connected!"
    ```
+
+---
+
+### Step 6 (Optional but Recommended): Configure Multi-Tier Model Router
+To prevent exhausting your Google Gemini Flash quota on routine file searches (`grep`/`glob`), install and configure [`opencode-model-router`](https://github.com/marco-jardim/opencode-model-router) so OpenCode routes `@fast` tasks to Flash Lite (`gemini-3.1-flash-lite`), `@medium` to Flash (`gemini-3.8-flash`), and `@heavy` to Pro (`gemini-3.1-pro-preview`):
+
+Refer to the complete guide at: [OPENCODE_MODEL_ROUTER_GUIDE.md](../OPENCODE_MODEL_ROUTER_GUIDE.md).

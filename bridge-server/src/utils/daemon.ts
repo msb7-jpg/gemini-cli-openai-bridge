@@ -26,6 +26,54 @@ const red = (text: string) => `\x1b[31m${text}\x1b[0m`;
 const cyan = (text: string) => `\x1b[36m${text}\x1b[0m`;
 const bold = (text: string) => `\x1b[1m${text}\x1b[0m`;
 const dim = (text: string) => `\x1b[2m${text}\x1b[0m`;
+const magenta = (text: string) => `\x1b[35m${text}\x1b[0m`;
+
+export class TerminalSpinner {
+  private frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  private index = 0;
+  private intervalId: NodeJS.Timeout | null = null;
+  private message: string;
+  private startTime: number = Date.now();
+  private isTTY = Boolean(process.stdout.isTTY);
+
+  constructor(message: string) {
+    this.message = message;
+  }
+
+  public start(): void {
+    this.startTime = Date.now();
+    if (!this.isTTY) {
+      console.log(`${this.message}...`);
+      return;
+    }
+    this.render();
+    this.intervalId = setInterval(() => {
+      this.index = (this.index + 1) % this.frames.length;
+      this.render();
+    }, 80);
+  }
+
+  public update(message: string): void {
+    this.message = message;
+    if (this.isTTY) this.render();
+  }
+
+  private render(): void {
+    const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
+    const frame = this.frames[this.index];
+    process.stdout.write(`\r\x1b[K${cyan(frame)} ${this.message} ${dim(`(${elapsed}s)`)}`);
+  }
+
+  public stop(clear = true): void {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    if (this.isTTY && clear) {
+      process.stdout.write('\r\x1b[K');
+    }
+  }
+}
 
 function ensureGeminiDir(): void {
   if (!fs.existsSync(GEMINI_DIR)) {
@@ -124,7 +172,7 @@ export async function handleStatus(port: number, host = '127.0.0.1'): Promise<vo
     console.log(`  ${cyan('Models:')}    http://${effectiveHost}:${effectivePort}/v1/models`);
     console.log(`  ${cyan('Logs:')}      ${LOG_FILE}`);
     console.log('');
-    console.log(dim(`Comandos: 'gemini-bridge stop' | 'gemini-bridge restart' | 'gemini-bridge logs'`));
+    console.log(dim(`Comandos: 'gemini-bridge quota' | 'gemini-bridge stop' | 'gemini-bridge restart' | 'gemini-bridge logs'`));
   } else if (health.ok) {
     // Process running without PID file or orphan
     console.log(yellow(`${bold('● Gemini Bridge')} está respondendo na porta ${effectivePort}, mas sem registro PID recente.`));
@@ -267,7 +315,8 @@ export async function startDaemon(
     '--foreground',
   ];
 
-  console.log(`Iniciando Gemini Bridge em segundo plano...`);
+  const spinner = new TerminalSpinner('Iniciando Gemini Bridge e autenticando');
+  spinner.start();
 
   const child = spawn(process.execPath, childArgs, {
     detached: true,
@@ -277,6 +326,7 @@ export async function startDaemon(
 
   const childPid = child.pid;
   if (!childPid) {
+    spinner.stop(true);
     console.error(red('Falha ao spawnar processo do bridge.'));
     process.exit(1);
   }
@@ -290,21 +340,23 @@ export async function startDaemon(
     startTime: Date.now(),
   });
 
-  // 4. Wait for health check confirmation
+  // 4. Wait for health check confirmation with spinner
   let online = false;
   let version = '';
-  for (let i = 0; i < 20; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 250));
+  for (let i = 0; i < 35; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
     if (!isPidRunning(childPid)) {
       break;
     }
-    const health = await checkBridgeHealth(port, host, 500);
+    const health = await checkBridgeHealth(port, host, 400);
     if (health.ok) {
       online = true;
       version = health.version || '';
       break;
     }
   }
+
+  spinner.stop(true);
 
   if (online) {
     console.log(green(`${bold('✓ Gemini Bridge iniciado com sucesso (detached)!')}`));
@@ -316,10 +368,12 @@ export async function startDaemon(
     console.log(`  ${cyan('OpenAI:')}    http://${host}:${port}/v1/chat/completions`);
     console.log(`  ${cyan('Anthropic:')} http://${host}:${port}/v1/messages`);
     console.log(`  ${cyan('Models:')}    http://${host}:${port}/v1/models`);
+    console.log(`  ${cyan('Quota:')}     http://${host}:${port}/v1/quota`);
     console.log(`  ${cyan('Logs:')}      ${LOG_FILE}`);
     console.log('');
     console.log(dim(`Comandos úteis:`));
     console.log(dim(`  gemini-bridge status   (verificar status)`));
+    console.log(dim(`  gemini-bridge quota    (verificar consumo e cota)`));
     console.log(dim(`  gemini-bridge stop     (parar o servidor)`));
     console.log(dim(`  gemini-bridge restart  (reiniciar o servidor)`));
     console.log(dim(`  gemini-bridge logs     (visualizar logs)`));
@@ -331,5 +385,140 @@ export async function startDaemon(
     }
     removePidFile();
     process.exit(1);
+  }
+}
+
+function renderProgressBar(used: number, limit: number, width = 20): string {
+  if (limit <= 0) return `[${'█'.repeat(width)}]`;
+  const ratio = Math.min(Math.max(used / limit, 0), 1);
+  const filled = Math.round(ratio * width);
+  const empty = width - filled;
+  const bar = '█'.repeat(filled) + '░'.repeat(empty);
+
+  if (ratio >= 1.0) {
+    return red(`[${bar}]`);
+  } else if (ratio >= 0.8) {
+    return yellow(`[${bar}]`);
+  }
+  return green(`[${bar}]`);
+}
+
+export function renderQuotaDashboard(data: any, host: string, port: number): void {
+  const statusColor =
+    data.status === 'healthy'
+      ? green(bold('HEALTHY (Normal)'))
+      : data.status === 'pro_quota_exceeded'
+      ? yellow(bold('PRO QUOTA EXCEEDED (Fallback active)'))
+      : red(bold('RATE LIMITED (Exceeded)'));
+
+  console.log(`${bold('══════════════════════════════════════════════════════')}`);
+  console.log(`  ${bold('Gemini Bridge Quota & Usage Monitor')}  ${dim(`(http://${host}:${port})`)}`);
+  console.log(`${bold('══════════════════════════════════════════════════════')}`);
+  console.log(`  ${cyan('Status:')}         ${statusColor}`);
+  console.log(`  ${cyan('Auth Type:')}      ${data.authType || 'unknown'}`);
+  console.log(`  ${cyan('Uptime:')}         ${formatUptime(Date.now() - (data.uptimeSeconds || 0) * 1000)}`);
+  console.log(`  ${cyan('Total Requests:')} ${data.requests?.total ?? 0}`);
+  console.log('');
+
+  const rpm = data.requests?.rpm;
+  if (rpm) {
+    const rpmBar = renderProgressBar(rpm.used, rpm.limit, 20);
+    console.log(`  ${bold('Requests Per Minute (RPM):')}`);
+    console.log(`    ${rpmBar} ${bold(`${rpm.used}/${rpm.limit}`)} reqs  ${dim(`(${rpm.remaining} restantes nesta janela)`)}`);
+  }
+
+  const rpd = data.requests?.rpd;
+  if (rpd) {
+    const rpdBar = renderProgressBar(rpd.used, rpd.limit, 20);
+    console.log(`  ${bold('Requests Per Day (RPD):')}`);
+    console.log(`    ${rpdBar} ${bold(`${rpd.used}/${rpd.limit}`)} reqs  ${dim(`(${rpd.remaining} restantes hoje)`)}`);
+  }
+
+  console.log('');
+  const tokens = data.tokens;
+  if (tokens) {
+    console.log(`  ${bold('Tokens Consumidos (Sessão):')}`);
+    console.log(`    ${cyan('Prompt:')}     ${(tokens.promptTokens || 0).toLocaleString()} tokens`);
+    console.log(`    ${cyan('Candidate:')}  ${(tokens.completionTokens || 0).toLocaleString()} tokens`);
+    if (tokens.cachedTokens) {
+      console.log(`    ${cyan('Cached:')}     ${(tokens.cachedTokens || 0).toLocaleString()} tokens`);
+    }
+    console.log(`    ${cyan('Total:')}      ${bold((tokens.totalTokens || 0).toLocaleString())} tokens`);
+  }
+
+  if (data.proQuotaExceeded) {
+    console.log('');
+    console.log(yellow(`  ⚠️  ${bold('Cota Pro Esgotada:')} As requisições serão roteadas para o modelo fallback (ex: Flash).`));
+    if (data.retryAfterSeconds > 0) {
+      console.log(yellow(`     Tempo estimado para recuperação: ${bold(`${data.retryAfterSeconds}s`)}`));
+    }
+  }
+
+  if (data.remoteModelQuotas && Array.isArray(data.remoteModelQuotas) && data.remoteModelQuotas.length > 0) {
+    console.log('');
+    console.log(`  ${bold('Google Cloud Remote Quotas & Reset Time (Enterprise):')}`);
+    
+    // Check if we have tier summaries (categories: Flash, Flash Lite, Pro)
+    const tierSummaries = data.remoteModelQuotas.filter(
+      (b: any) => b.name && b.includedModels && b.includedModels.length > 0,
+    );
+
+    const itemsToDisplay = tierSummaries.length > 0 ? tierSummaries : data.remoteModelQuotas;
+
+    for (const b of itemsToDisplay) {
+      const displayName = b.name || b.modelId;
+      const usedPct = b.usedPercentage ?? (100 - (b.remainingPercentage ?? 100));
+      const bar = renderProgressBar(usedPct, 100, 20);
+      const resetInfo = b.resetsIn ? `Resets: ${b.resetsIn}` : '';
+      const pctStr = `${usedPct}%`.padEnd(5);
+      const statusColor =
+        usedPct >= 100 ? red : usedPct >= 80 ? yellow : green;
+
+      console.log(`    • ${bold(displayName.padEnd(12))} ${bar} ${statusColor(pctStr)}  ${dim(resetInfo)}`);
+      if (b.includedModels && Array.isArray(b.includedModels) && b.includedModels.length > 0) {
+        console.log(`      ${dim(`↳ (${b.includedModels.join(', ')})`)}`);
+      }
+    }
+  }
+
+  if (data.byModel && Object.keys(data.byModel).length > 0) {
+    console.log('');
+    console.log(`  ${bold('Consumo por Modelo (Nesta Sessão do Bridge):')}`);
+    for (const [m, mStats] of Object.entries<any>(data.byModel)) {
+      console.log(`    • ${bold(m)}: ${mStats.requests} reqs, ${(mStats.tokens?.totalTokens || 0).toLocaleString()} tokens`);
+    }
+  }
+
+  console.log(`${bold('══════════════════════════════════════════════════════')}`);
+}
+
+export async function handleQuota(port: number, host = '127.0.0.1'): Promise<void> {
+  const pidInfo = readPidFile();
+  const effectivePort = pidInfo?.port || port;
+  const effectiveHost = pidInfo?.host || host;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`http://${effectiveHost}:${effectivePort}/v1/quota`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      console.log(red(`Erro ao consultar cota: HTTP ${res.status} ${res.statusText}`));
+      return;
+    }
+
+    const data = await res.json();
+    renderQuotaDashboard(data, effectiveHost, effectivePort);
+  } catch {
+    const health = await checkBridgeHealth(effectivePort, effectiveHost, 500);
+    if (!health.ok) {
+      console.log(red(`${bold('○ Gemini Bridge')} está ${bold('INATIVO')}`));
+      console.log(dim(`Para iniciar o bridge execute: ${bold('gemini-bridge')}`));
+    } else {
+      console.log(yellow(`O servidor está respondendo na porta ${effectivePort}, mas o endpoint /v1/quota não está disponível.`));
+    }
   }
 }

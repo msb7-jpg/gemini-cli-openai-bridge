@@ -51,7 +51,80 @@ npm link
 
 ### Step 3: Configure OpenCode (`~/.config/opencode/opencode.json`)
 Read the user's existing `~/.config/opencode/opencode.json` (or create it if missing).
-Ensure the `gemini-bridge` provider is defined under `"provider"`:
+
+You can configure OpenCode using either the modern `providers` format (recommended for forward compatibility) or the classic `provider` format with `options`.
+
+#### Modern Format (`providers` — Recommended):
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "gemini-bridge": {
+      "name": "Gemini CLI Bridge",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:8765/v1"
+      },
+      "headers": {
+        "Authorization": "Bearer local-bridge"
+      },
+      "models": {
+        "gemini-3.8-flash": {
+          "name": "Gemini 3.8 Flash (Thinking)",
+          "capabilities": {
+            "tools": true
+          }
+        },
+        "gemini-3.5-flash": {
+          "name": "Gemini 3.5 Flash",
+          "capabilities": {
+            "tools": true
+          }
+        },
+        "gemini-3.1-flash-lite": {
+          "name": "Gemini 3.1 Flash Lite",
+          "capabilities": {
+            "tools": true
+          }
+        },
+        "gemini-2.5-pro": {
+          "name": "Gemini 2.5 Pro (Deep Reasoning)",
+          "capabilities": {
+            "tools": true
+          }
+        },
+        "gemini-2.5-flash": {
+          "name": "Gemini 2.5 Flash",
+          "capabilities": {
+            "tools": true
+          }
+        },
+        "gemini-2.5-flash-lite": {
+          "name": "Gemini 2.5 Flash Lite",
+          "capabilities": {
+            "tools": true
+          }
+        },
+        "gemini-3-flash-preview": {
+          "name": "Gemini 3 Flash Preview",
+          "capabilities": {
+            "tools": true
+          }
+        },
+        "gemini-3-pro-preview": {
+          "name": "Gemini 3 Pro Preview",
+          "capabilities": {
+            "tools": true
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### Classic Format (`provider` — with `options`):
+Ensure `baseURL` and `apiKey` are wrapped inside the nested `"options"` block:
 
 ```json
 {
@@ -135,10 +208,11 @@ Ensure the `gemini-bridge` provider is defined under `"provider"`:
 }
 ```
 
-If OpenCode is currently running in server mode, restart the service:
-```bash
-opencode service restart 2>/dev/null || true
-```
+> **Note on Applying Config Changes:**  
+> After creating or modifying `opencode.json`, restart or reload OpenCode for changes to take effect:
+> ```bash
+> opencode service restart 2>/dev/null || opencode reload 2>/dev/null || true
+> ```
 
 ---
 

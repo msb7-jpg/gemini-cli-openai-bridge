@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { sessionId, AuthType } from '@google/gemini-cli-core';
-import { loadSettings } from './config/settings.js';
+import { loadSettings, USER_SETTINGS_DIR } from './config/settings.js';
 import { loadExtensions } from './config/extension.js';
 import { getCliVersion } from './utils/version.js';
 import { loadServerConfig } from './config/config.js';
@@ -15,6 +15,7 @@ import { logger } from './utils/logger.js';
 import { type SecurityPolicy } from './types.js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
+import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import { writePidFile, removePidFile } from './utils/daemon.js';
@@ -169,6 +170,12 @@ export async function startBridgeServer(): Promise<void> {
 
   if (selectedAuthType) {
     authReason = ' (from .gemini/settings.json)';
+  } else if (
+    !process.env.GEMINI_API_KEY &&
+    fs.existsSync(path.join(USER_SETTINGS_DIR, 'oauth_creds.json'))
+  ) {
+    selectedAuthType = AuthType.LOGIN_WITH_GOOGLE;
+    authReason = ' (auto-detected from ~/.gemini/oauth_creds.json)';
   } else if (process.env.GEMINI_API_KEY) {
     selectedAuthType = AuthType.USE_GEMINI;
     authReason = ' (fallback to GEMINI_API_KEY environment variable)';

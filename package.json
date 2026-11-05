@@ -1,6 +1,6 @@
 {
     "name": "@migueldsbatista/gemini-cli-openai-bridge",
-    "version": "0.1.16",
+    "version": "0.1.17",
     "description": "High-performance OpenAI (/v1/chat/completions) & Anthropic (/v1/messages) bridge for Google Gemini CLI. Tailored for OpenCode, Claude Code, Roo Code & Aider.",
     "author": "Miguel de Sousa Batista",
     "license": "Apache-2.0",
@@ -37,7 +37,7 @@
         "gemini-cli/packages/*"
     ],
     "scripts": {
-        "install": "git submodule update --init --recursive && cd gemini-cli && npm install",
+        "install": "git submodule update --init --recursive --depth 1 && cd gemini-cli && npm install",
         "port": "rimraf gemini-cli/packages/bridge-server && shx cp -r bridge-server gemini-cli/packages/ && shx cp LICENSE gemini-cli/packages/bridge-server/ && shx cp README.md gemini-cli/packages/bridge-server/ && cd gemini-cli/packages/bridge-server && npm install",
         "compile": "npm run build --workspace=@migueldsbatista/gemini-cli-openai-bridge",
         "prepare": "npm run install && npm run port && npm run compile",

@@ -7,9 +7,9 @@
 > **Standalone Evolution & Maintenance**  
 > Built upon the open-source [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) core and inspired by the archived [`Intelligent-Internet/gemini-cli-mcp-openai-bridge`](https://github.com/Intelligent-Internet/gemini-cli-mcp-openai-bridge).
 
-`@migueldsbatista/gemini-cli-openai-bridge` provides a high-performance **OpenAI-compatible (`/v1/chat/completions`)** and **Anthropic Messages-compatible (`/v1/messages`)** HTTP API bridge that routes requests directly to Google Gemini models using the official authentication, session management, and execution engine of Google's Gemini CLI.
+`@migueldsbatista/gemini-cli-openai-bridge` provides a high-performance **OpenAI-compatible** and **Anthropic Messages-compatible** HTTP API bridge that routes requests directly to Google Gemini models using the official authentication, session management, and execution engine of Google's Gemini CLI.
 
-It is specifically tailored for AI coding agents and developer workflows such as **[OpenCode](https://opencode.ai)**, **Claude Code (`claude`)**, **VSCode Copilot Chat**, **Zed Editor**, **Aider**, **Roo Code**, **Continue**, and **Open WebUI**.
+It is specifically tailored for AI coding agents and developer workflows such as **[OpenCode](https://opencode.ai)**, **Claude Code**, **VSCode Copilot Chat**, **Zed Editor**, **Aider**, **Roo Code**, **Continue**, and **Open WebUI**.
 
 ---
 
@@ -25,15 +25,15 @@ Please set up the Gemini CLI OpenAI Bridge by reading the instructions at:
 - VSCode Copilot Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-vscode.md
 - Zed Editor Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-zed.md
 
-Follow these instructions to clone https://github.com/msb7-jpg/gemini-cli-openai-bridge.git, build from source, link globally, configure my credentials, and verify the integration.
+Follow these instructions to install @migueldsbatista/gemini-cli-openai-bridge globally, configure my credentials, and verify the integration.
 ```
 
 Dedicated prompt files:
-- 🤖 OpenCode: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-opencode.md)
-- 🎭 Claude Code: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-claude-code.md)
-- 💻 VSCode Copilot: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-vscode.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-vscode.md)
-- ⚡ Zed Editor: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-zed.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/prompts/setup-zed.md)
-- 📋 Comprehensive Setup Guide: [https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/SETUP.md](https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/SETUP.md)
+- 🤖 OpenCode: [prompts/setup-opencode.md](./prompts/setup-opencode.md)
+- 🎭 Claude Code: [prompts/setup-claude-code.md](./prompts/setup-claude-code.md)
+- 💻 VSCode Copilot: [prompts/setup-vscode.md](./prompts/setup-vscode.md)
+- ⚡ Zed Editor: [prompts/setup-zed.md](./prompts/setup-zed.md)
+- 📋 Comprehensive Setup Guide: [SETUP.md](./SETUP.md)
 
 ---
 
@@ -48,7 +48,7 @@ Gemini thinking models analyzing visual screenshot inputs directly inside OpenCo
 ![OpenCode Vision](media/opencode-vision-example.png)
 
 ### 3. Claude Code Running on Gemini 3.8 Flash
-Claude Code (`claude`) transparently operating through our Anthropic Messages API (`/v1/messages`):
+Claude Code transparently operating through our Anthropic Messages API (`/v1/messages`):
 ![Claude Code on Gemini](media/claude-example.png)
 
 ---
@@ -70,7 +70,7 @@ The original upstream repository [`Intelligent-Internet/gemini-cli-mcp-openai-br
 
 | Feature / Area | Original Archived Project | `@migueldsbatista/gemini-cli-openai-bridge` |
 |---|---|---|
-| **Anthropic Messages API (`/v1/messages`)** | ❌ Not supported | ✅ **Fully supported**: native integration for **Claude Code** (`claude`) with streaming & tools. |
+| **Anthropic Messages API (`/v1/messages`)** | ❌ Not supported | ✅ **Fully supported**: native integration for **Claude Code** with streaming & tools. |
 | **`thought_signature` Handling** | ❌ Stripped / discarded, breaking multi-turn tool calling with thinking models | ✅ **Cached & injected** across turns via `thoughtSignatureCache`, enabling Gemini 2.5 & 3.x thinking models. |
 | **JSON Schema Sanitization** | ❌ Minimal (only `$schema` & `additionalProperties`), crashing on modern Zod / Effect Schemas | ✅ **Strict whitelist & conversions** (`exclusiveMinimum`, `const` to `enum`, `oneOf` to `anyOf`, type arrays). |
 | **Parallel Tool Calls Parity** | ❌ Mapped 1:1 as separate `user` turns, causing HTTP 400 part mismatch errors | ✅ **Batch grouped** into a single Gemini `user` turn with ordered 1:1 part matching and synthetic fallback. |
@@ -88,26 +88,15 @@ The original upstream repository [`Intelligent-Internet/gemini-cli-mcp-openai-br
 npm install -g @migueldsbatista/gemini-cli-openai-bridge
 ```
 
-Start the bridge on the default port (`8765`):
+Start the bridge daemon:
 ```bash
-gemini-bridge --port=8765
+gemini-bridge
 ```
 
-### Method 2: Run Directly via npx (Zero Installation)
+### Method 2: Run Directly via npx (Secondary Option)
 
 ```bash
 npx @migueldsbatista/gemini-cli-openai-bridge --port=8765
-```
-
-### Method 3: Build from Source (Developers & Contributors)
-
-```bash
-git clone https://github.com/msb7-jpg/gemini-cli-openai-bridge.git
-cd gemini-cli-openai-bridge
-npm install
-npm run build
-npm link
-gemini-bridge --port=8765
 ```
 
 ---
@@ -123,7 +112,7 @@ The bridge requires authentication to access Google Gemini APIs:
    ```
 
 2. **Option B: Environment Variable (CI / Headless Servers)**  
-   Set your API key before starting the server:
+   Set your API key before starting the server in your environment variables:
    ```bash
    export GEMINI_API_KEY="AIzaSy..."
    gemini-bridge
@@ -131,375 +120,16 @@ The bridge requires authentication to access Google Gemini APIs:
 
 ---
 
-## 🤖 Integration with OpenCode
+## 🔌 Integrations
 
-Configure the bridge in `~/.config/opencode/opencode.json`:
+The bridge seamlessly connects with popular AI coding agents, editors, and developer tools via standard OpenAI `/v1/chat/completions` and Anthropic `/v1/messages` endpoints.
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "gemini-bridge": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Gemini Bridge",
-      "options": {
-        "baseURL": "http://127.0.0.1:8765/v1",
-        "apiKey": "local-bridge"
-      },
-      "models": {
-        "gemini-3.8-flash": {
-          "name": "Gemini 3.8 Flash (Thinking)",
-          "tool_call": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          }
-        },
-        "gemini-3.5-flash": {
-          "name": "Gemini 3.5 Flash",
-          "tool_call": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          }
-        },
-        "gemini-3.1-flash-lite": {
-          "name": "Gemini 3.1 Flash Lite",
-          "tool_call": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          }
-        },
-        "gemini-2.5-pro": {
-          "name": "Gemini 2.5 Pro (Deep Reasoning)",
-          "tool_call": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          }
-        },
-        "gemini-2.5-flash": {
-          "name": "Gemini 2.5 Flash",
-          "tool_call": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          }
-        },
-        "gemini-2.5-flash-lite": {
-          "name": "Gemini 2.5 Flash Lite",
-          "tool_call": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          }
-        },
-        "gemini-3-flash-preview": {
-          "name": "Gemini 3 Flash Preview",
-          "tool_call": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          }
-        },
-        "gemini-3-pro-preview": {
-          "name": "Gemini 3 Pro Preview",
-          "tool_call": true,
-          "limit": {
-            "context": 1048576,
-            "output": 65536
-          }
-        }
-      }
-    }
-  }
-}
-```
+Detailed step-by-step setup guides and prompt templates:
 
-Start OpenCode pointing to your model:
-```bash
-opencode --model gemini-bridge/gemini-3.8-flash
-```
-
-For agent prompt instructions, see [`prompts/setup-opencode.md`](prompts/setup-opencode.md).
-
----
-
-## 🎭 Integration with Claude Code (`claude`)
-
-The bridge natively exposes the **Anthropic Messages API (`/v1/messages`)** with streaming, function calling / tool execution, and model discovery (`/v1/models`).
-
-### Persistent Setup (All Sessions)
-
-Add the following to `~/.claude/settings.json`:
-
-```json
-{
-  "env": {
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8765",
-    "ANTHROPIC_AUTH_TOKEN": "local",
-    "ANTHROPIC_MODEL": "gemini-3.8-flash"
-  }
-}
-```
-
-Or export them in your shell configuration (`~/.zshrc` or `~/.bashrc`):
-
-```bash
-export ANTHROPIC_BASE_URL="http://127.0.0.1:8765"
-export ANTHROPIC_AUTH_TOKEN="local"
-export ANTHROPIC_MODEL="gemini-3.8-flash"
-```
-
-### Run Claude Code
-
-```bash
-claude
-```
-
-Or specify a specific model dynamically:
-```bash
-claude --model gemini-3.8-flash
-claude --model gemini-2.5-pro
-claude --model gemini-2.5-flash
-```
-
-The bridge translates Claude's tools (`Bash`, `FileRead`, `FileEdit`, etc.) directly to Gemini tool calls and maps results back seamlessly.
-
-For agent prompt instructions, see [`prompts/setup-claude-code.md`](prompts/setup-claude-code.md).
-
----
-
-## 💻 Integration with VSCode Copilot Chat
-
-VSCode supports custom language models via `chatLanguageModels.json`, enabling GitHub Copilot Chat to communicate directly with the Gemini CLI OpenAI Bridge with full support for streaming, multimodal vision, tool calling, inline code edits (`editTools`), and thinking/deep reasoning.
-
-### Configuration (`chatLanguageModels.json`)
-
-Depending on your operating system, locate or create `chatLanguageModels.json`:
-- **Linux**: `~/.config/Code/User/chatLanguageModels.json`
-- **macOS**: `~/Library/Application Support/Code/User/chatLanguageModels.json`
-- **Windows**: `%APPDATA%\Code\User\chatLanguageModels.json`
-
-Add the bridge endpoint configuration under `"customendpoint"` (preserving any existing keys such as `"agent-host-copilotcli"`):
-
-```json
-{
-  "customendpoint": [
-    {
-      "model": "gemini-3.8-flash",
-      "name": "Gemini 3.8 Flash (Thinking)",
-      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
-      "apiKey": "local-bridge",
-      "tools": true,
-      "vision": true,
-      "thinking": true,
-      "editTools": true,
-      "streaming": true,
-      "maxInputTokens": 1048576,
-      "maxOutputTokens": 65536
-    },
-    {
-      "model": "gemini-3-pro-preview",
-      "name": "Gemini 3 Pro Preview",
-      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
-      "apiKey": "local-bridge",
-      "tools": true,
-      "vision": true,
-      "thinking": true,
-      "editTools": true,
-      "streaming": true,
-      "maxInputTokens": 1048576,
-      "maxOutputTokens": 65536
-    },
-    {
-      "model": "gemini-2.5-pro",
-      "name": "Gemini 2.5 Pro (Deep Reasoning)",
-      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
-      "apiKey": "local-bridge",
-      "tools": true,
-      "vision": true,
-      "thinking": true,
-      "editTools": true,
-      "streaming": true,
-      "maxInputTokens": 1048576,
-      "maxOutputTokens": 65536
-    },
-    {
-      "model": "gemini-2.5-flash",
-      "name": "Gemini 2.5 Flash",
-      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
-      "apiKey": "local-bridge",
-      "tools": true,
-      "vision": true,
-      "thinking": true,
-      "editTools": true,
-      "streaming": true,
-      "maxInputTokens": 1048576,
-      "maxOutputTokens": 65536
-    },
-    {
-      "model": "gemini-2.5-flash-lite",
-      "name": "Gemini 2.5 Flash Lite",
-      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
-      "apiKey": "local-bridge",
-      "tools": true,
-      "vision": true,
-      "thinking": false,
-      "editTools": true,
-      "streaming": true,
-      "maxInputTokens": 1048576,
-      "maxOutputTokens": 65536
-    }
-  ]
-}
-```
-
-### Apply and Verify
-1. Start the bridge: `gemini-bridge`
-2. In VSCode, open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and run **`Developer: Reload Window`**.
-3. Open Copilot Chat and select your desired Gemini model from the model picker dropdown.
-
-For full agent prompt instructions, see [`prompts/setup-vscode.md`](prompts/setup-vscode.md).
-
----
-
-## ⚡ Integration with Zed Editor
-
-Zed supports OpenAI-compatible endpoints directly in its `settings.json`, enabling Zed's Assistant panel and Agent mode to communicate directly with the Gemini CLI OpenAI Bridge with full support for streaming, multimodal vision, reasoning effort, and tool execution.
-
-### Configuration (`settings.json`)
-
-Depending on your operating system, locate or edit `settings.json`:
-- **Linux**: `~/.config/zed/settings.json`
-- **macOS**: `~/Library/Application Support/Zed/settings.json`
-
-Add the bridge endpoint configuration under `"language_models"."openai_compatible"`:
-
-```json
-{
-  "language_models": {
-    "openai_compatible": {
-      "Gemini OpenAI Bridge": {
-        "api_url": "http://127.0.0.1:8765/v1",
-        "available_models": [
-          {
-            "name": "gemini-3.8-flash",
-            "display_name": "Gemini 3.8 Flash (Thinking)",
-            "max_tokens": 1048576,
-            "max_output_tokens": 65536,
-            "reasoning_effort": "medium",
-            "capabilities": {
-              "tools": true,
-              "images": true,
-              "parallel_tool_calls": true,
-              "prompt_cache_key": false,
-              "chat_completions": true,
-              "interleaved_reasoning": false,
-              "max_tokens_parameter": false
-            }
-          },
-          {
-            "name": "gemini-2.5-pro",
-            "display_name": "Gemini 2.5 Pro (Deep Reasoning)",
-            "max_tokens": 1048576,
-            "max_output_tokens": 65536,
-            "reasoning_effort": "high",
-            "capabilities": {
-              "tools": true,
-              "images": true,
-              "parallel_tool_calls": true,
-              "prompt_cache_key": false,
-              "chat_completions": true,
-              "interleaved_reasoning": false,
-              "max_tokens_parameter": false
-            }
-          },
-          {
-            "name": "gemini-3-pro-preview",
-            "display_name": "Gemini 3 Pro Preview",
-            "max_tokens": 1048576,
-            "max_output_tokens": 65536,
-            "reasoning_effort": "high",
-            "capabilities": {
-              "tools": true,
-              "images": true,
-              "parallel_tool_calls": true,
-              "prompt_cache_key": false,
-              "chat_completions": true,
-              "interleaved_reasoning": false,
-              "max_tokens_parameter": false
-            }
-          },
-          {
-            "name": "gemini-2.5-flash",
-            "display_name": "Gemini 2.5 Flash",
-            "max_tokens": 1048576,
-            "max_output_tokens": 65536,
-            "reasoning_effort": "medium",
-            "capabilities": {
-              "tools": true,
-              "images": true,
-              "parallel_tool_calls": true,
-              "prompt_cache_key": false,
-              "chat_completions": true,
-              "interleaved_reasoning": false,
-              "max_tokens_parameter": false
-            }
-          },
-          {
-            "name": "gemini-2.5-flash-lite",
-            "display_name": "Gemini 2.5 Flash Lite",
-            "max_tokens": 1048576,
-            "max_output_tokens": 65536,
-            "capabilities": {
-              "tools": true,
-              "images": true,
-              "parallel_tool_calls": true,
-              "prompt_cache_key": false,
-              "chat_completions": true,
-              "interleaved_reasoning": false,
-              "max_tokens_parameter": false
-            }
-          }
-        ]
-      }
-    }
-  },
-  "agent": {
-    "favorite_models": [
-      {
-        "provider": "Gemini OpenAI Bridge",
-        "model": "gemini-3.8-flash"
-      },
-      {
-        "provider": "Gemini OpenAI Bridge",
-        "model": "gemini-2.5-pro"
-      },
-      {
-        "provider": "Gemini OpenAI Bridge",
-        "model": "gemini-3-pro-preview"
-      },
-      {
-        "provider": "Gemini OpenAI Bridge",
-        "model": "gemini-2.5-flash"
-      },
-      {
-        "provider": "Gemini OpenAI Bridge",
-        "model": "gemini-2.5-flash-lite"
-      }
-    ]
-  }
-}
-```
-
-### Apply and Verify
-1. Start the bridge: `gemini-bridge`
-2. Open the Assistant panel in Zed (`Ctrl-?` on Linux, `Cmd-?` on macOS).
-3. Select `Gemini 3.8 Flash (Thinking)` or another configured Gemini model from the model selector dropdown.
-
-For full agent prompt instructions, see [`prompts/setup-zed.md`](prompts/setup-zed.md).
+- 🤖 **[OpenCode Setup](./prompts/setup-opencode.md)**: Configuration for `~/.config/opencode/opencode.json` using `@ai-sdk/openai-compatible`.
+- 🎭 **[Claude Code Setup](./prompts/setup-claude-code.md)**: Configuration for Anthropic Messages API routing via environment variables.
+- 💻 **[VSCode Copilot Chat Setup](./prompts/setup-vscode.md)**: Configuration for `chatLanguageModels.json` custom endpoints.
+- ⚡ **[Zed Editor Setup](./prompts/setup-zed.md)**: Configuration for Zed `settings.json` under `openai_compatible`.
 
 ---
 
@@ -580,25 +210,11 @@ Options:
 
 ## 🧪 Testing & Development
 
+For guidelines on setting up local development, running tests, rebuilding with `npm run port`, and publishing, please refer to [CONTRIBUTING.md](CONTRIBUTING.md).
+
 Run the test suite:
 ```bash
 npm test
-```
-
-Rebuild after modifying files in `bridge-server/`:
-```bash
-npm run port
-npm run build
-```
-
-Create a distribution tarball for testing:
-```bash
-npm run pack:bridge-server
-```
-
-Publish to npm registry (maintainers):
-```bash
-npm run publish:bridge-server
 ```
 
 ---

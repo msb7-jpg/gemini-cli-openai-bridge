@@ -9,7 +9,7 @@
 
 `@migueldsbatista/gemini-cli-openai-bridge` provides a high-performance **OpenAI-compatible** and **Anthropic Messages-compatible** HTTP API bridge that routes requests directly to Google Gemini models using the official authentication, session management, and execution engine of Google's Gemini CLI.
 
-It is specifically tailored for AI coding agents and developer workflows such as **[OpenCode](https://opencode.ai)**, **Claude Code**, **VSCode Copilot Chat**, **Zed Editor**, **Aider**, **Roo Code**, **Continue**, and **Open WebUI**.
+It is specifically tailored for AI coding agents and developer workflows such as **[OpenCode](https://opencode.ai)**, **Claude Code**, **OpenAI Codex**, **VSCode Copilot Chat**, **Zed Editor**, **Aider**, **Roo Code**, **Continue**, and **Open WebUI**.
 
 ---
 
@@ -64,13 +64,14 @@ It is specifically tailored for AI coding agents and developer workflows such as
 
 ### 1-Click Setup Prompt for AI Agents
 
-If you are using an AI coding assistant (such as **OpenCode**, **Claude Code**, **VSCode Copilot**, **Zed**, **Cursor**, **Aider**, or **Roo Code**), simply copy and paste this prompt:
+If you are using an AI coding assistant (such as **OpenCode**, **Claude Code**, **OpenAI Codex**, **VSCode Copilot**, **Zed**, **Cursor**, **Aider**, or **Roo Code**), simply copy and paste this prompt:
 
 ```markdown
 Please set up the Gemini CLI OpenAI Bridge by reading the instructions at:
 - Setup Guide: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/setup-legacy.md
 - OpenCode Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/integrations/opencode.md
 - Claude Code Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/integrations/claude-code.md
+- OpenAI Codex Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/integrations/codex.md
 - VSCode Copilot Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/integrations/vscode.md
 - Zed Editor Setup: https://github.com/msb7-jpg/gemini-cli-openai-bridge/blob/main/docs/integrations/zed.md
 
@@ -82,6 +83,7 @@ Dedicated prompt files:
 - 🎭 Claude Code: [docs/integrations/claude-code.md](./docs/integrations/claude-code.md)
 - 💻 VSCode Copilot: [docs/integrations/vscode.md](./docs/integrations/vscode.md)
 - ⚡ Zed Editor: [docs/integrations/zed.md](./docs/integrations/zed.md)
+- 🧠 OpenAI Codex: [docs/integrations/codex.md](./docs/integrations/codex.md)
 - 📋 Comprehensive Setup Guide: [docs/setup-legacy.md](./docs/setup-legacy.md)
 
 ### Manual Installation
@@ -155,6 +157,7 @@ Detailed step-by-step setup guides and prompt templates:
 - 🎭 **[Claude Code Setup](./docs/integrations/claude-code.md)**: Configuration for Anthropic Messages API routing via environment variables.
 - 💻 **[VSCode Copilot Chat Setup](./docs/integrations/vscode.md)**: Configuration for `chatLanguageModels.json` custom endpoints.
 - ⚡ **[Zed Editor Setup](./docs/integrations/zed.md)**: Configuration for Zed `settings.json` under `openai_compatible`.
+- 🧠 **[OpenAI Codex Setup](./docs/integrations/codex.md)**: Configuration for `~/.codex/config.toml` targeting the Responses API.
 
 ---
 

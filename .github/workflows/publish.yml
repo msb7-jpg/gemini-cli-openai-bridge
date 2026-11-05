@@ -18,12 +18,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18.x' # Matches your package.json engine requirements
+          node-version: '20.x'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Install dependencies
+        run: npm install
+
       - name: Publish Package
-        # This will run your existing prepare, build, and publish scripts
         run: npm run publish:bridge-server
         env:
-          # setup-node automatically configures npm to use this env var for authentication
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

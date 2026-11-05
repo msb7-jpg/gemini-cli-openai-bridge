@@ -8,7 +8,7 @@ import { loadSettings, USER_SETTINGS_DIR } from './config/settings.js';
 import { loadExtensions } from './config/extension.js';
 import { getCliVersion } from './utils/version.js';
 import { loadServerConfig } from './config/config.js';
-import { createOpenAIRouter, createAnthropicRouter } from './bridge/index.js';
+import { createOpenAIRouter, createAnthropicRouter, createResponsesApiRouter } from './bridge/index.js';
 import { globalQuotaTracker } from './services/quota-tracker.js';
 import express from 'express';
 import { logger } from './utils/logger.js';
@@ -247,6 +247,10 @@ export async function startBridgeServer(): Promise<void> {
   const anthropicRouter = createAnthropicRouter(config, debugMode);
   app.use('/v1', anthropicRouter);
   app.use('/', anthropicRouter);
+
+  // Mount Codex Responses API endpoint (/v1/responses)
+  const responsesRouter = createResponsesApiRouter(config, debugMode);
+  app.use('/v1', responsesRouter);
 
   // Write PID file if running foreground standalone
   writePidFile({

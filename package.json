@@ -45,6 +45,12 @@
         "link": "npm run build && npm link --ignore-scripts",
         "start": "npm start --workspace=@migueldsbatista/gemini-cli-openai-bridge --",
         "test": "cd gemini-cli && npx vitest run packages/bridge-server",
+        "lint": "oxlint -c .oxlintrc.json bridge-server/src",
+        "lint:fix": "oxlint --fix -c .oxlintrc.json bridge-server/src",
+        "format": "oxfmt bridge-server/src",
+        "format:check": "oxfmt --check bridge-server/src",
+        "fallow": "fallow",
+        "check": "npm run lint && npm run format:check && npm run fallow && npm test",
         "pack:bridge-server": "npm run build && cd gemini-cli/packages/bridge-server && npm pack",
         "publish:bridge-server": "npm run build && cd gemini-cli/packages/bridge-server && npm publish --access public"
     },
@@ -59,6 +65,9 @@
         "NOTICE"
     ],
     "devDependencies": {
+        "fallow": "^3.40.0",
+        "oxfmt": "^0.77.0",
+        "oxlint": "^1.92.0",
         "rimraf": "^6.0.1",
         "shx": "^0.4.0"
     }

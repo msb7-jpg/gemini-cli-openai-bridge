@@ -1,0 +1,66 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "oxc",
+    "jsdoc",
+    "unicorn"
+  ],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/bundle/**"
+  ],
+  "rules": {
+    "jsdoc/check-tag-names": "error",
+    "jsdoc/check-property-names": "error",
+    "jsdoc/require-param": "error",
+    "jsdoc/require-param-name": "error",
+    "jsdoc/require-param-description": "error",
+    "jsdoc/require-returns": "error",
+    "jsdoc/require-returns-description": "error",
+    "complexity": [
+      "error",
+      60
+    ],
+    "max-lines": [
+      "error",
+      {
+        "max": 800,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "max-lines-per-function": [
+      "error",
+      {
+        "max": 260,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "max-depth": [
+      "error",
+      6
+    ],
+    "max-params": [
+      "error",
+      8
+    ],
+    "id-length": [
+      "error",
+      {
+        "min": 2,
+        "exceptions": [
+          "i",
+          "j",
+          "e",
+          "err",
+          "_"
+        ]
+      }
+    ],
+    "typescript/no-explicit-any": "error",
+    "no-unused-vars": "error"
+  }
+}

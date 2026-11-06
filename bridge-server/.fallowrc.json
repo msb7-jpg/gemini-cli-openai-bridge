@@ -1,0 +1,52 @@
+{
+  "$schema": "https://fallow.tools/schema.json",
+  "entry": [
+    "src/index.ts",
+    "src/schemas/index.ts",
+    "src/schemas/openai.ts",
+    "src/schemas/anthropic.ts",
+    "src/schemas/quota.ts",
+    "src/bridge/index.ts",
+    "src/types.ts",
+    "src/server.ts"
+  ],
+  "supportEntry": [
+    "src/**/*.test.ts",
+    "src/**/__tests__/**/*.ts"
+  ],
+  "ignoreDependencies": [
+    "@google/genai",
+    "oxlint",
+    "oxfmt"
+  ],
+  "ignoreBinaries": [
+    "vsce",
+    "eslint",
+    "prettier"
+  ],
+  "duplicates": {
+    "enabled": false
+  },
+  "health": {
+    "maxCyclomatic": 100,
+    "maxCognitive": 150,
+    "maxCrap": 5000,
+    "maxUnitSize": 500
+  },
+  "rules": {
+    "unused-files": "error",
+    "unused-exports": "off",
+    "unused-types": "off",
+    "unused-dependencies": "error",
+    "unused-dev-dependencies": "off",
+    "unused-class-members": "off",
+    "duplicate-exports": "off",
+    "unlisted-dependencies": "error",
+    "unlisted-binaries": "error",
+    "circular-dependencies": "off",
+    "complexity-cyclomatic": "off",
+    "complexity-cognitive": "off",
+    "complexity-crap": "off",
+    "complexity-file-lines": "off"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://fallow.tools/schema.json",
+  "entry": [
+    "bridge-server/src/index.ts",
+    "bridge-server/src/schemas/index.ts",
+    "bridge-server/src/schemas/openai.ts",
+    "bridge-server/src/schemas/anthropic.ts",
+    "bridge-server/src/schemas/quota.ts",
+    "bridge-server/src/bridge/index.ts",
+    "bridge-server/src/types.ts",
+    "bridge-server/src/server.ts"
+  ],
+  "supportEntry": [
+    "bridge-server/src/**/*.test.ts",
+    "bridge-server/src/**/__tests__/**/*.ts"
+  ],
+  "ignorePatterns": [
+    "gemini-cli/**"
+  ],
+  "ignoreDependencies": [
+    "@google/genai",
+    "oxlint",
+    "oxfmt"
+  ],
+  "ignoreBinaries": [
+    "vsce"
+  ],
+  "duplicates": {
+    "enabled": false
+  },
+  "health": {
+    "maxCyclomatic": 100,
+    "maxCognitive": 150,
+    "maxCrap": 5000,
+    "maxUnitSize": 500
+  },
+  "rules": {
+    "unused-files": "error",
+    "unused-exports": "off",
+    "unused-types": "off",
+    "unused-dependencies": "error",
+    "unused-dev-dependencies": "off",
+    "unused-class-members": "off",
+    "duplicate-exports": "off",
+    "unlisted-dependencies": "error",
+    "unlisted-binaries": "error",
+    "circular-dependencies": "off",
+    "complexity-cyclomatic": "off",
+    "complexity-cognitive": "off",
+    "complexity-crap": "off",
+    "complexity-file-lines": "off"
+  }
+}

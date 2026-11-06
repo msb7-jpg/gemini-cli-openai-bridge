@@ -13,7 +13,7 @@ Guidance and standards for AI agents working in this repository.
 - **TSDoc / JSDoc**: Mandatory docstrings on all exported functions with `@param` and `@returns`.
 - **Identifier Clarity**: No single-letter variable names. Only exceptions: `i`, `j`, `e`, `err`, `_`.
 - **Complexity Limits**: Keep functions small and modular. Enforced by oxlint (`complexity: 60`, `max-lines: 800`, `max-lines-per-function: 260`, `max-depth: 6`, `max-params: 8`).
-- **Schema Validation**: Zod `.passthrough()` on incoming payloads to tolerate client-specific vendor fields.
+- **Schema Validation**: Zod 4 `z.looseObject()` on incoming payloads to tolerate client-specific vendor fields.
 - **Strict Typing & Hygiene**: Zero loose `any` (use `unknown` or explicit interfaces) and zero dead imports/variables.
 
 ## Workflow & Commands
@@ -34,7 +34,7 @@ Guidance and standards for AI agents working in this repository.
 ## Future Roadmap & Technical Debt
 
 See `docs/migrations/architecture-and-layering-roadmap.md` for details:
-- **Fallow Rules Debt**: Critical rules (`unused-exports`, `circular-dependencies`, `complexity-*`) are temporarily set to `"off"` in `.fallowrc.json` and must be enabled progressively.
-- **Zod 4 Migration**: Upgrade path for higher validation throughput.
-- **Clean Architecture**: Decompose monolithic god files (`openai.ts`, `anthropic.ts`, `gemini-client.ts`) into clean presentation, application, domain, and infrastructure layers.
+- **Vertical Slice Architecture**: Feature slices (`src/features/*`) backed by a protocol-agnostic Core Engine (`src/core/*`) and stateless shared utilities (`src/shared/*`).
+- **Fallow Strictness**: All Fallow rules enabled with practical health and duplication thresholds in `.fallowrc.json`.
+- **Zod 4**: `z.looseObject()` and 2-argument `z.record(z.string(), ...)` across all slice schemas.
 

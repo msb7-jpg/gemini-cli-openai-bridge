@@ -7,12 +7,12 @@
 import { fileURLToPath } from "url";
 import {
   handleStatus,
-  handleQuota,
   handleStop,
-  handleLogs,
   startDaemon,
   removePidFile,
-} from "./utils/daemon.js";
+} from "./features/daemon-cli/process-manager.js";
+import { handleQuota } from "./features/daemon-cli/quota-dashboard.view.js";
+import { handleLogs } from "./features/daemon-cli/log-tailer.js";
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -20,7 +20,6 @@ async function main() {
   const rawArgs = process.argv.slice(2);
   const firstArg = rawArgs[0];
 
-  // Helper to resolve port quickly before deep parsing
   const resolvePort = () => {
     const portArg = rawArgs.find((arg) => arg.startsWith("--port=") || arg.startsWith("-p="));
     if (portArg) {
@@ -47,7 +46,6 @@ async function main() {
     return "127.0.0.1";
   };
 
-  // Fast-path subcommands (execute in < 30ms without loading heavy server libraries)
   if (firstArg === "status") {
     await handleStatus(resolvePort(), resolveHost());
     process.exit(0);
@@ -89,14 +87,12 @@ async function main() {
     rawArgs.includes("-f") ||
     rawArgs.includes("--server-process");
 
-  // If invoked with no subcommand or 'start', default to detach daemon with live feedback
   if (!isForeground) {
     await startDaemon(resolvePort(), resolveHost(), rawArgs, __filename);
     process.exit(0);
   }
 
-  // Otherwise, lazy-load heavy modules and run the actual HTTP server process
-  const { startBridgeServer } = await import("./server.js");
+  const { startBridgeServer } = await import("./features/daemon-cli/server-bootstrap.js");
   await startBridgeServer();
 }
 

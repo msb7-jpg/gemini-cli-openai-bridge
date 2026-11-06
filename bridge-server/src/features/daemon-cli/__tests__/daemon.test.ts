@@ -13,11 +13,11 @@ import {
   writePidFile,
   removePidFile,
   formatUptime,
-  checkBridgeHealth,
   isPidRunning,
-} from "../daemon.js";
+} from "../process-manager.js";
+import { checkBridgeHealth } from "../health-poller.js";
 
-describe("daemon utils", () => {
+describe("daemon-cli slice utils", () => {
   describe("formatUptime", () => {
     it("formats seconds correctly", () => {
       const now = Date.now();
@@ -41,7 +41,6 @@ describe("daemon utils", () => {
     });
 
     it("returns false for an invalid or non-existent PID", () => {
-      // 99999999 is typically unused
       expect(isPidRunning(99999999)).toBe(false);
     });
   });

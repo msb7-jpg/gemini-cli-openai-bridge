@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { FastifyInstance } from "fastify";
+import { type FastifyInstance } from "fastify";
+import { type Config } from "@google/gemini-cli-core";
 import { createServer } from "../server.js";
-import type { Config } from "../types.js";
 
 describe("Fastify Server Integration Tests", () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    // Mock minimal Config object needed for server initialization
     const mockConfig = {
       getModel: () => "gemini-2.5-flash",
       getContentGeneratorConfig: async () => ({ authType: "LOGIN_WITH_GOOGLE" }),
@@ -64,12 +63,23 @@ describe("Fastify Server Integration Tests", () => {
     expect(body).toHaveProperty("tokens");
   });
 
+  it("GET /v1/models returns 200 with model list", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/models",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.object).toBe("list");
+    expect(Array.isArray(body.data)).toBe(true);
+  });
+
   it("POST /v1/chat/completions rejects invalid schema with 400", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/v1/chat/completions",
       payload: {
-        // missing 'model' and 'messages'
         invalid_field: "invalid",
       },
     });
@@ -84,7 +94,6 @@ describe("Fastify Server Integration Tests", () => {
       method: "POST",
       url: "/v1/messages",
       payload: {
-        // missing model, max_tokens, messages
         invalid: 123,
       },
     });

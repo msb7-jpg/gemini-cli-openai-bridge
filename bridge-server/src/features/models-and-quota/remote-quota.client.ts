@@ -162,7 +162,7 @@ function buildTierSummaries(rawItems: RemoteModelQuota[]): RemoteModelQuota[] {
 /**
  * Client for fetching upstream Google Cloud Code user quota buckets via OAuth credentials.
  */
-class RemoteQuotaClient {
+export class RemoteQuotaClient {
   private lastFetchTime = 0;
   private cachedQuotas: RemoteModelQuota[] = [];
   private cacheTtlMs = 15_000;
@@ -220,35 +220,20 @@ class RemoteQuotaClient {
     }
   }
 
-  private resolveProjectId(): string | undefined {
-    if (process.env.GOOGLE_CLOUD_PROJECT) return process.env.GOOGLE_CLOUD_PROJECT;
-    if (process.env.GOOGLE_CLOUD_PROJECT_ID) return process.env.GOOGLE_CLOUD_PROJECT_ID;
-
-    try {
-      const zshrcPath = path.join(os.homedir(), ".zshrc");
-      if (fs.existsSync(zshrcPath)) {
-        const content = fs.readFileSync(zshrcPath, "utf-8");
-        const match = content.match(/export\s+GOOGLE_CLOUD_PROJECT=["']?([a-zA-Z0-9-_]+)["']?/);
-        if (match && match[1]) return match[1];
-      }
-    } catch {
-      // ignore
-    }
-
-    try {
-      const accountsPath = path.join(os.homedir(), ".gemini", "google_accounts.json");
-      if (fs.existsSync(accountsPath)) {
-        const raw = fs.readFileSync(accountsPath, "utf-8");
-        const accounts = JSON.parse(raw) as { active?: string };
-        if (accounts.active && accounts.active.includes("motorola.com")) {
-          return "moto-gemini-assist";
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    return undefined;
+  /**
+   * Resolves the Google Cloud project ID from standard environment variables.
+   *
+   * @param env - Optional environment variables dictionary (defaults to process.env).
+   * @returns Configured project ID string or undefined.
+   */
+  public resolveProjectId(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    return (
+      env.GOOGLE_CLOUD_PROJECT ||
+      env.GOOGLE_CLOUD_PROJECT_ID ||
+      env.GEMINI_PROJECT_ID ||
+      env.DEFAULT_GOOGLE_CLOUD_PROJECT ||
+      undefined
+    );
   }
 
   private async getOAuthAccessToken(): Promise<string | null> {

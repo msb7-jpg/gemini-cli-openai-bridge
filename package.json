@@ -1,6 +1,6 @@
 {
     "name": "@migueldsbatista/gemini-cli-openai-bridge",
-    "version": "0.1.18",
+    "version": "0.5.1",
     "description": "High-performance OpenAI (/v1/chat/completions) & Anthropic (/v1/messages) bridge for Google Gemini CLI. Tailored for OpenCode, Claude Code, Roo Code & Aider.",
     "author": "Miguel de Sousa Batista",
     "license": "Apache-2.0",

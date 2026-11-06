@@ -195,17 +195,17 @@ Example CLI output:
   Total Requests: 4
 
   Requests Per Minute (RPM):
-    [█░░░░░░░░░░░░░░░░░░░] 3/60 reqs  (57 restantes nesta janela)
+    [█░░░░░░░░░░░░░░░░░░░] 3/60 reqs  (57 remaining in this window)
   Requests Per Day (RPD):
-    [░░░░░░░░░░░░░░░░░░░░] 4/1000 reqs  (996 restantes hoje)
+    [░░░░░░░░░░░░░░░░░░░░] 4/1000 reqs  (996 remaining today)
 
-  Tokens Consumidos (Sessão):
+  Tokens Consumed (Session):
     Prompt:     242,850 tokens
     Candidate:  68 tokens
     Cached:     110,591 tokens
     Total:      242,918 tokens
 
-  Consumo por Modelo:
+  Usage by Model (This Bridge Session):
     • gemini-3.8-flash: 6 reqs, 242,918 tokens
 ══════════════════════════════════════════════════════
 ```
@@ -243,6 +243,14 @@ Gemini thinking models analyzing visual screenshot inputs directly inside OpenCo
 Claude Code transparently operating through our Anthropic Messages API (`/v1/messages`):
 ![Claude Code on Gemini](media/claude-example.png)
 
+### 4. Background Daemon Status & Quick Probes
+Real-time active daemon monitoring with `gemini-bridge status`:
+![Gemini Bridge Status](media/gemini-bridge-status.png)
+
+### 5. Quota & Token Usage Dashboard
+Live terminal dashboard showing RPM/RPD windows, token usage, and enterprise quotas with `gemini-bridge quota`:
+![Gemini Bridge Quota Dashboard](media/gemini-bridge-quota.png)
+
 ---
 
 ## 🆚 Differences from the Archived Upstream Project
@@ -279,8 +287,24 @@ npm test
 
 ---
 
+## 🗺️ Roadmap
+
+We are continuously evolving the bridge to improve developer experience, optimize token consumption, and simplify setup:
+
+- **🧠 `adaptive-gemini` Intelligent Routing Engine**: A native virtual model and Responses API routing layer that dynamically selects the optimal model tier (`Flash Lite`, `Flash`, or `Pro`) based on task complexity, tools, and token quotas—bringing smart delegation to *any* AI harness (Claude Code, OpenAI Codex, Aider, Roo Code).
+- **🩺 `gemini-bridge doctor`**: Interactive CLI diagnostics command to verify OAuth credentials, network connectivity, API keys, and daemon health in seconds.
+- **⚡ Client Setup Wizards (`gemini-bridge setup <client>`)**: One-click configuration for OpenCode, Claude Code, Codex, Zed, and Continue.
+- **📊 Embedded Web Dashboard (`/dashboard`)**: Real-time request visualizer, reasoning inspector, and token/quota monitoring.
+- **🛡️ Resilience & Auth**: Proactive background OAuth token refresh and human-readable Google API error translations.
+- **📚 Protocol Expansion**: Support for OpenAI-compatible `/v1/embeddings` and Anthropic document/PDF block parsing.
+
+👉 Read the full architectural roadmap and milestones in [**docs/roadmap.md**](docs/roadmap.md).
+
+---
+
 ## 📄 License & Attribution
 
 - Licensed under [Apache-2.0](LICENSE).
 - Core execution engine and authentication: [Google Gemini CLI](https://github.com/google-gemini/gemini-cli) (Copyright Google LLC).
 - Architectural foundation: inspired by the archived [`Intelligent-Internet/gemini-cli-mcp-openai-bridge`](https://github.com/Intelligent-Internet/gemini-cli-mcp-openai-bridge) (Copyright 2025 Intelligent-Internet).
+

@@ -2,12 +2,6 @@
   "$schema": "https://fallow.tools/schema.json",
   "entry": [
     "bridge-server/src/index.ts",
-    "bridge-server/src/schemas/index.ts",
-    "bridge-server/src/schemas/openai.ts",
-    "bridge-server/src/schemas/anthropic.ts",
-    "bridge-server/src/schemas/quota.ts",
-    "bridge-server/src/bridge/index.ts",
-    "bridge-server/src/types.ts",
     "bridge-server/src/server.ts"
   ],
   "supportEntry": [
@@ -18,36 +12,37 @@
     "gemini-cli/**"
   ],
   "ignoreDependencies": [
-    "@google/genai",
-    "oxlint",
-    "oxfmt"
+    "@google/genai"
   ],
   "ignoreBinaries": [
     "vsce"
   ],
   "duplicates": {
-    "enabled": false
+    "enabled": true,
+    "mode": "semantic",
+    "minTokens": 120,
+    "minLines": 25
   },
   "health": {
-    "maxCyclomatic": 100,
-    "maxCognitive": 150,
-    "maxCrap": 5000,
-    "maxUnitSize": 500
+    "maxCyclomatic": 45,
+    "maxCognitive": 85,
+    "maxCrap": 1800,
+    "maxUnitSize": 260
   },
   "rules": {
     "unused-files": "error",
-    "unused-exports": "off",
-    "unused-types": "off",
+    "unused-exports": "error",
+    "unused-types": "error",
     "unused-dependencies": "error",
-    "unused-dev-dependencies": "off",
-    "unused-class-members": "off",
-    "duplicate-exports": "off",
+    "unused-dev-dependencies": "error",
+    "unused-class-members": "error",
+    "duplicate-exports": "error",
     "unlisted-dependencies": "error",
     "unlisted-binaries": "error",
-    "circular-dependencies": "off",
-    "complexity-cyclomatic": "off",
-    "complexity-cognitive": "off",
-    "complexity-crap": "off",
-    "complexity-file-lines": "off"
+    "circular-dependencies": "error",
+    "complexity-cyclomatic": "error",
+    "complexity-cognitive": "error",
+    "complexity-crap": "error",
+    "complexity-file-lines": "error"
   }
 }

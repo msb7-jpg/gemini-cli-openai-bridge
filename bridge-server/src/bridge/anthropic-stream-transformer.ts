@@ -1,17 +1,17 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from "node:crypto";
 import {
   thoughtSignatureCache,
   lastThoughtSignatureByTool,
   toolCallNameCache,
-} from '../utils/thought-signature-cache.js';
-import { type StreamChunk } from '../types.js';
-import { globalQuotaTracker } from '../services/quota-tracker.js';
+} from "../utils/thought-signature-cache.js";
+import { type StreamChunk } from "../types.js";
+import { globalQuotaTracker } from "../services/quota-tracker.js";
 
 export function createAnthropicStreamTransformer(
   model: string,
   debugMode = false,
 ): TransformStream<StreamChunk, Uint8Array> {
-  const messageId = `msg_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+  const messageId = `msg_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
   const encoder = new TextEncoder();
 
   let isFirst = true;
@@ -35,17 +35,17 @@ export function createAnthropicStreamTransformer(
       if (debugMode) {
         console.log(
           `[Anthropic Stream Transformer] Received chunk: ${chunk.type}`,
-          chunk.data ? JSON.stringify(chunk.data) : '',
+          chunk.data ? JSON.stringify(chunk.data) : "",
         );
       }
 
       if (isFirst) {
-        sendEvent(controller, 'message_start', {
-          type: 'message_start',
+        sendEvent(controller, "message_start", {
+          type: "message_start",
           message: {
             id: messageId,
-            type: 'message',
-            role: 'assistant',
+            type: "message",
+            role: "assistant",
             model,
             content: [],
             stop_reason: null,
@@ -60,47 +60,47 @@ export function createAnthropicStreamTransformer(
       }
 
       switch (chunk.type) {
-        case 'text': {
+        case "text": {
           if (!chunk.data) break;
 
           // If no active text block, start one
           if (activeTextBlockIndex === null) {
             activeTextBlockIndex = nextBlockIndex++;
-            sendEvent(controller, 'content_block_start', {
-              type: 'content_block_start',
+            sendEvent(controller, "content_block_start", {
+              type: "content_block_start",
               index: activeTextBlockIndex,
               content_block: {
-                type: 'text',
-                text: '',
+                type: "text",
+                text: "",
               },
             });
           }
 
           totalOutputTokens += Math.ceil(chunk.data.length / 4);
-          sendEvent(controller, 'content_block_delta', {
-            type: 'content_block_delta',
+          sendEvent(controller, "content_block_delta", {
+            type: "content_block_delta",
             index: activeTextBlockIndex,
             delta: {
-              type: 'text_delta',
+              type: "text_delta",
               text: chunk.data,
             },
           });
           break;
         }
 
-        case 'tool_code': {
+        case "tool_code": {
           const { name, args, thoughtSignature } = chunk.data;
 
           // If there is an open text block, close it before tool call block
           if (activeTextBlockIndex !== null) {
-            sendEvent(controller, 'content_block_stop', {
-              type: 'content_block_stop',
+            sendEvent(controller, "content_block_stop", {
+              type: "content_block_stop",
               index: activeTextBlockIndex,
             });
             activeTextBlockIndex = null;
           }
 
-          const toolCallId = `toolu_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+          const toolCallId = `toolu_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
           toolCallNameCache.set(toolCallId, name);
           if (thoughtSignature) {
             thoughtSignatureCache.set(toolCallId, thoughtSignature);
@@ -110,11 +110,11 @@ export function createAnthropicStreamTransformer(
           const toolBlockIndex = nextBlockIndex++;
           hasToolCalls = true;
 
-          sendEvent(controller, 'content_block_start', {
-            type: 'content_block_start',
+          sendEvent(controller, "content_block_start", {
+            type: "content_block_start",
             index: toolBlockIndex,
             content_block: {
-              type: 'tool_use',
+              type: "tool_use",
               id: toolCallId,
               name,
               input: {},
@@ -122,31 +122,31 @@ export function createAnthropicStreamTransformer(
           });
 
           const argsJson = JSON.stringify(args || {});
-          sendEvent(controller, 'content_block_delta', {
-            type: 'content_block_delta',
+          sendEvent(controller, "content_block_delta", {
+            type: "content_block_delta",
             index: toolBlockIndex,
             delta: {
-              type: 'input_json_delta',
+              type: "input_json_delta",
               partial_json: argsJson,
             },
           });
 
-          sendEvent(controller, 'content_block_stop', {
-            type: 'content_block_stop',
+          sendEvent(controller, "content_block_stop", {
+            type: "content_block_stop",
             index: toolBlockIndex,
           });
           break;
         }
 
-        case 'reasoning':
+        case "reasoning":
           break;
 
-        case 'usage':
+        case "usage":
           if (chunk.data) {
             const prompt = chunk.data.promptTokenCount || 0;
             const completion = chunk.data.candidatesTokenCount || 0;
             const cached = chunk.data.cachedContentTokenCount || 0;
-            const total = chunk.data.totalTokenCount || (prompt + completion);
+            const total = chunk.data.totalTokenCount || prompt + completion;
 
             globalQuotaTracker.recordUsage(model, {
               promptTokens: prompt,
@@ -166,12 +166,12 @@ export function createAnthropicStreamTransformer(
     flush(controller) {
       if (isFirst) {
         // In case nothing was sent at all
-        sendEvent(controller, 'message_start', {
-          type: 'message_start',
+        sendEvent(controller, "message_start", {
+          type: "message_start",
           message: {
             id: messageId,
-            type: 'message',
-            role: 'assistant',
+            type: "message",
+            role: "assistant",
             model,
             content: [],
             stop_reason: null,
@@ -185,17 +185,17 @@ export function createAnthropicStreamTransformer(
       }
 
       if (activeTextBlockIndex !== null) {
-        sendEvent(controller, 'content_block_stop', {
-          type: 'content_block_stop',
+        sendEvent(controller, "content_block_stop", {
+          type: "content_block_stop",
           index: activeTextBlockIndex,
         });
         activeTextBlockIndex = null;
       }
 
-      sendEvent(controller, 'message_delta', {
-        type: 'message_delta',
+      sendEvent(controller, "message_delta", {
+        type: "message_delta",
         delta: {
-          stop_reason: hasToolCalls ? 'tool_use' : 'end_turn',
+          stop_reason: hasToolCalls ? "tool_use" : "end_turn",
           stop_sequence: null,
         },
         usage: {
@@ -203,8 +203,8 @@ export function createAnthropicStreamTransformer(
         },
       });
 
-      sendEvent(controller, 'message_stop', {
-        type: 'message_stop',
+      sendEvent(controller, "message_stop", {
+        type: "message_stop",
       });
     },
   });

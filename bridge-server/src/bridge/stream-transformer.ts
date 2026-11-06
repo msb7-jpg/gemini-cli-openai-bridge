@@ -1,20 +1,20 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID } from "node:crypto";
 import {
   thoughtSignatureCache,
   lastThoughtSignatureByTool,
   toolCallNameCache,
-} from '../utils/thought-signature-cache.js';
-import { type StreamChunk } from '../types.js';
-import { globalQuotaTracker } from '../services/quota-tracker.js';
+} from "../utils/thought-signature-cache.js";
+import { type StreamChunk } from "../types.js";
+import { globalQuotaTracker } from "../services/quota-tracker.js";
 
 // --- OpenAI Response Interfaces ---
 interface OpenAIDelta {
-  role?: 'assistant';
+  role?: "assistant";
   content?: string | null;
   tool_calls?: {
     index: number;
     id: string;
-    type: 'function';
+    type: "function";
     function: {
       name?: string;
       arguments?: string;
@@ -24,7 +24,7 @@ interface OpenAIDelta {
 
 interface OpenAIChunk {
   id: string;
-  object: 'chat.completion.chunk';
+  object: "chat.completion.chunk";
   created: number;
   model: string;
   choices: {
@@ -49,16 +49,16 @@ export function createOpenAIStreamTransformer(
   const encoder = new TextEncoder();
   let isFirstChunk = true;
   let toolCallIndex = 0;
-  let usageData: OpenAIChunk['usage'] = null;
+  let usageData: OpenAIChunk["usage"] = null;
 
   const createChunk = (
     delta: OpenAIDelta,
     finish_reason: string | null = null,
-    usage: OpenAIChunk['usage'] = null,
+    usage: OpenAIChunk["usage"] = null,
   ): OpenAIChunk => {
     const chunk: OpenAIChunk = {
       id: chatID,
-      object: 'chat.completion.chunk',
+      object: "chat.completion.chunk",
       created: creationTime,
       model: model,
       choices: [
@@ -88,25 +88,25 @@ export function createOpenAIStreamTransformer(
       if (debugMode) {
         console.log(
           `[Stream Transformer] Received chunk: ${chunk.type}`,
-          chunk.data ? JSON.stringify(chunk.data) : '',
+          chunk.data ? JSON.stringify(chunk.data) : "",
         );
       }
       let delta: OpenAIDelta = {};
 
       if (isFirstChunk) {
-        delta.role = 'assistant';
+        delta.role = "assistant";
         isFirstChunk = false;
       }
 
       switch (chunk.type) {
-        case 'text':
+        case "text":
           if (chunk.data) {
             delta.content = chunk.data;
             enqueueChunk(controller, createChunk(delta));
           }
           break;
 
-        case 'tool_code': {
+        case "tool_code": {
           const { name, args, thoughtSignature } = chunk.data;
           // IMPORTANT: Embed the function name in the ID so it can be parsed when a tool response is received.
           const toolCallId = `call_${name}_${randomUUID()}`;
@@ -124,8 +124,8 @@ export function createOpenAIStreamTransformer(
               {
                 index: toolCallIndex,
                 id: toolCallId,
-                type: 'function',
-                function: { name: name, arguments: '' },
+                type: "function",
+                function: { name: name, arguments: "" },
               },
             ],
           };
@@ -137,7 +137,7 @@ export function createOpenAIStreamTransformer(
               {
                 index: toolCallIndex,
                 id: toolCallId,
-                type: 'function',
+                type: "function",
                 function: { arguments: JSON.stringify(args) },
               },
             ],
@@ -148,19 +148,19 @@ export function createOpenAIStreamTransformer(
           break;
         }
 
-        case 'reasoning':
+        case "reasoning":
           // These events currently have no direct equivalent in the OpenAI format and can be ignored or logged.
           if (debugMode) {
             console.log(`[Stream Transformer] Ignoring chunk: ${chunk.type}`);
           }
           break;
 
-        case 'usage':
+        case "usage":
           if (chunk.data) {
             const prompt = chunk.data.promptTokenCount || 0;
             const completion = chunk.data.candidatesTokenCount || 0;
             const cached = chunk.data.cachedContentTokenCount || 0;
-            const total = chunk.data.totalTokenCount || (prompt + completion);
+            const total = chunk.data.totalTokenCount || prompt + completion;
 
             globalQuotaTracker.recordUsage(model, {
               promptTokens: prompt,
@@ -181,7 +181,7 @@ export function createOpenAIStreamTransformer(
 
     flush(controller) {
       // At the end of the stream, send a finish_reason of 'tool_calls' or 'stop'.
-      const finish_reason = toolCallIndex > 0 ? 'tool_calls' : 'stop';
+      const finish_reason = toolCallIndex > 0 ? "tool_calls" : "stop";
       enqueueChunk(controller, createChunk({}, finish_reason, usageData));
 
       const doneString = `data: [DONE]\n\n`;

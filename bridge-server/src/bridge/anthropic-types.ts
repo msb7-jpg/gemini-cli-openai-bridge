@@ -1,18 +1,18 @@
 export interface AnthropicTextBlock {
-  type: 'text';
+  type: "text";
   text: string;
-  cache_control?: any;
+  cache_control?: unknown;
 }
 
 export interface AnthropicToolUseBlock {
-  type: 'tool_use';
+  type: "tool_use";
   id: string;
   name: string;
   input: Record<string, unknown>;
 }
 
 export interface AnthropicToolResultBlock {
-  type: 'tool_result';
+  type: "tool_result";
   tool_use_id: string;
   content?: string | Array<{ type: string; text?: string }>;
   is_error?: boolean;
@@ -24,7 +24,7 @@ export type AnthropicContentBlock =
   | AnthropicToolResultBlock;
 
 export interface AnthropicMessage {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string | AnthropicContentBlock[];
 }
 
@@ -37,26 +37,26 @@ export interface AnthropicTool {
 export interface AnthropicMessagesRequest {
   model: string;
   messages: AnthropicMessage[];
-  system?: string | Array<{ type: 'text'; text: string; cache_control?: any }>;
+  system?: string | Array<{ type: "text"; text: string; cache_control?: unknown }>;
   max_tokens?: number;
   stream?: boolean;
   tools?: AnthropicTool[];
   thinking?: {
-    type: 'enabled' | 'adaptive';
+    type: "enabled" | "adaptive";
     budget_tokens?: number;
   };
 }
 
 export interface AnthropicMessageResponse {
   id: string;
-  type: 'message';
-  role: 'assistant';
+  type: "message";
+  role: "assistant";
   model: string;
   content: Array<
-    | { type: 'text'; text: string }
-    | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+    | { type: "text"; text: string }
+    | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   >;
-  stop_reason: 'end_turn' | 'tool_use' | 'max_tokens' | null;
+  stop_reason: "end_turn" | "tool_use" | "max_tokens" | null;
   stop_sequence: string | null;
   usage: {
     input_tokens: number;

@@ -1,55 +1,62 @@
-import { Router, Request, Response } from 'express';
-import { type Config } from '@google/gemini-cli-core';
-import { createOpenAIStreamTransformer } from './stream-transformer.js';
-import { GeminiApiClient } from '../gemini-client.js';
+/**
+ * @license
+ * Copyright 2025 Intelligent-Internet / Miguel de Sousa Batista
+ * SPDX-License-Identifier: Apache-2.0
+ */
+import { FastifyInstance, type FastifyRequest, type FastifyReply } from "fastify";
+import { ZodTypeProvider } from "fastify-type-provider-zod";
+import { type Config } from "@google/gemini-cli-core";
+import { createOpenAIStreamTransformer } from "./stream-transformer.js";
+import { GeminiApiClient } from "../gemini-client.js";
 import {
-  type OpenAIChatCompletionRequest,
   type OpenAIChatCompletion,
   type OpenAIChatCompletionMessage,
   type OpenAIChatCompletionChoice,
   type OpenAIToolCall,
-} from '../types.js';
-import { mapErrorToOpenAIError } from '../utils/error-mapper.js';
-import { logger } from '../utils/logger.js';
-import { randomUUID } from 'node:crypto';
+  type OpenAIChatCompletionRequest,
+} from "../types.js";
+import { OpenAIChatCompletionRequestSchema } from "../schemas/openai.js";
+import { mapErrorToOpenAIError } from "../utils/error-mapper.js";
+import { logger } from "../utils/logger.js";
+import { randomUUID } from "node:crypto";
 import {
   thoughtSignatureCache,
   lastThoughtSignatureByTool,
   toolCallNameCache,
-} from '../utils/thought-signature-cache.js';
-import { resolveModelId, SUPPORTED_MODELS } from '../utils/model-resolver.js';
-import { globalQuotaTracker } from '../services/quota-tracker.js';
+} from "../utils/thought-signature-cache.js";
+import { resolveModelId, SUPPORTED_MODELS } from "../utils/model-resolver.js";
+import { globalQuotaTracker } from "../services/quota-tracker.js";
 
-export function createOpenAIRouter(config: Config, debugMode = false): Router {
-  const router = Router();
-
-  // Middleware: Add a requestId to each request.
-  router.use((req, res, next) => {
-    (req as any).requestId = randomUUID();
-    next();
-  });
-
-  router.post('/chat/completions', async (req: Request, res: Response) => {
-    const requestId = (req as any).requestId;
+export async function registerOpenAIRoutes(
+  app: FastifyInstance,
+  config: Config,
+  debugMode = false,
+): Promise<void> {
+  const handler = async (
+    req: FastifyRequest<{ Body: OpenAIChatCompletionRequest }>,
+    reply: FastifyReply,
+  ) => {
+    const requestId = randomUUID();
     const startTime = Date.now();
     globalQuotaTracker.recordRequestStart();
 
     // Inject standard rate limit headers
     const rateHeaders = globalQuotaTracker.getRateLimitHeaders();
     for (const [headerName, headerVal] of Object.entries(rateHeaders)) {
-      res.setHeader(headerName, headerVal);
+      reply.header(headerName, headerVal);
     }
+
     try {
       const body = req.body as OpenAIChatCompletionRequest;
       const resolvedModel = resolveModelId(body.model);
 
-      logger.info('OpenAI bridge request received', {
+      logger.info("OpenAI bridge request received", {
         requestId,
         model: body.model,
         resolvedModel,
         stream: body.stream,
       });
-      logger.debug(debugMode, 'Request body:', { requestId, body, resolvedModel });
+      logger.debug(debugMode, "Request body:", { requestId, body, resolvedModel });
       const stream = body.stream !== false;
 
       const client = new GeminiApiClient(config, debugMode);
@@ -62,91 +69,93 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
       });
 
       if (stream) {
-        // --- Streaming Response ---
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.flushHeaders();
+        // --- Streaming Response using raw response ---
+        reply.raw.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        const rawReply = reply.raw as { flushHeaders?: () => void };
+        if (typeof rawReply.flushHeaders === "function") {
+          rawReply.flushHeaders();
+        }
 
-        const openAIStream = createOpenAIStreamTransformer(
-          body.model,
-          debugMode,
-        );
+        let isClientAborted = false;
+        req.raw.on("close", () => {
+          isClientAborted = true;
+        });
 
-        // --- Core streaming logic ---
-        // Create a ReadableStream to wrap our Gemini event stream.
+        const openAIStream = createOpenAIStreamTransformer(body.model, debugMode);
+
         const readableStream = new ReadableStream({
           async start(controller) {
             for await (const value of geminiStream) {
+              if (isClientAborted) {
+                break;
+              }
               controller.enqueue(value);
             }
             controller.close();
           },
         });
 
-        // Pipe our stream through the transformer.
         const transformedStream = readableStream.pipeThrough(openAIStream);
         const reader = transformedStream.getReader();
 
-        // Manually read each transformed chunk and write it to the response immediately.
         try {
           while (true) {
+            if (isClientAborted) {
+              break;
+            }
             const { done, value } = await reader.read();
             if (done) {
               break;
             }
-            res.write(value);
+            reply.raw.write(value);
           }
         } finally {
           reader.releaseLock();
         }
-        // --- End of core streaming logic ---
 
         const durationMs = Date.now() - startTime;
-        logger.info('OpenAI bridge request finished', {
+        logger.info("OpenAI bridge request finished", {
           requestId,
-          status: 'success',
+          status: "success",
           durationMs,
         });
-        res.end();
+        reply.raw.end();
+        return reply;
       } else {
         // --- Non-streaming logic ---
-
-        let fullTextContent = '';
+        let fullTextContent = "";
         const toolCalls: OpenAIToolCall[] = [];
-        let finishReason: OpenAIChatCompletionChoice['finish_reason'] = 'stop';
-        let recordedUsage: OpenAIChatCompletion['usage'] | undefined = undefined;
+        let finishReason: OpenAIChatCompletionChoice["finish_reason"] = "stop";
+        let recordedUsage: OpenAIChatCompletion["usage"] | undefined = undefined;
 
-        // 1. In-server aggregation of all stream chunks
         for await (const chunk of geminiStream) {
-          if (chunk.type === 'text' && chunk.data) {
+          if (chunk.type === "text" && chunk.data) {
             fullTextContent += chunk.data;
-          } else if (chunk.type === 'tool_code' && chunk.data) {
+          } else if (chunk.type === "tool_code" && chunk.data) {
             const toolCallId = `call_${chunk.data.name}_${randomUUID()}`;
             toolCallNameCache.set(toolCallId, chunk.data.name);
             if (chunk.data.thoughtSignature) {
-              thoughtSignatureCache.set(
-                toolCallId,
-                chunk.data.thoughtSignature,
-              );
-              lastThoughtSignatureByTool.set(
-                chunk.data.name,
-                chunk.data.thoughtSignature,
-              );
+              thoughtSignatureCache.set(toolCallId, chunk.data.thoughtSignature);
+              lastThoughtSignatureByTool.set(chunk.data.name, chunk.data.thoughtSignature);
             }
             toolCalls.push({
               id: toolCallId,
-              type: 'function',
+              type: "function",
               function: {
                 name: chunk.data.name,
                 arguments: JSON.stringify(chunk.data.args),
               },
             });
-          } else if (chunk.type === 'usage' && chunk.data) {
+          } else if (chunk.type === "usage" && chunk.data) {
             const prompt = chunk.data.promptTokenCount || 0;
             const completion = chunk.data.candidatesTokenCount || 0;
             const cached = chunk.data.cachedContentTokenCount || 0;
-            const total = chunk.data.totalTokenCount || (prompt + completion);
+            const total = chunk.data.totalTokenCount || prompt + completion;
 
             globalQuotaTracker.recordUsage(body.model, {
               promptTokens: prompt,
@@ -163,15 +172,13 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
           }
         }
 
-        // 2. Determine finish_reason based on aggregated results
         if (toolCalls.length > 0) {
-          finishReason = 'tool_calls';
+          finishReason = "tool_calls";
         }
 
-        // 3. Construct the complete OpenAI response object
         const assistantMessage: OpenAIChatCompletionMessage = {
-          role: 'assistant',
-          content: fullTextContent || null, // content is null if only tool calls are present
+          role: "assistant",
+          content: fullTextContent || null,
         };
 
         if (toolCalls.length > 0) {
@@ -180,7 +187,7 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
 
         const finalResponse: OpenAIChatCompletion = {
           id: `chatcmpl-${randomUUID()}`,
-          object: 'chat.completion',
+          object: "chat.completion",
           created: Math.floor(startTime / 1000),
           model: body.model,
           choices: [
@@ -194,46 +201,66 @@ export function createOpenAIRouter(config: Config, debugMode = false): Router {
         };
 
         const durationMs = Date.now() - startTime;
-        logger.info('OpenAI bridge non-streaming request finished', {
+        logger.info("OpenAI bridge non-streaming request finished", {
           requestId,
-          status: 'success',
+          status: "success",
           durationMs,
         });
 
-        // 4. Send the JSON response
-        res.status(200).json(finalResponse);
+        return reply.status(200).send(finalResponse);
       }
     } catch (e: unknown) {
       const durationMs = Date.now() - startTime;
-      logger.error('OpenAI bridge request failed', e as Error, {
+      logger.error("OpenAI bridge request failed", e as Error, {
         requestId,
         durationMs,
       });
 
-      // Track quota/rate-limit error if applicable
       globalQuotaTracker.recordQuotaError(e);
 
-      // 调用新的错误映射函数
       const { openAIError, statusCode } = mapErrorToOpenAIError(e);
 
-      if (!res.headersSent) {
-        res.status(statusCode).json(openAIError);
+      if (!reply.raw.headersSent) {
+        return reply.status(statusCode).send(openAIError);
       } else {
-        // If headers are already sent, we can't change the status code,
-        // but we can send an error in the stream.
-        res.write(`data: ${JSON.stringify({ error: openAIError.error })}\n\n`);
-        res.end();
+        reply.raw.write(`data: ${JSON.stringify({ error: openAIError.error })}\n\n`);
+        reply.raw.end();
+        return reply;
       }
     }
-  });
+  };
 
-  // The /v1/models endpoint
-  router.get('/models', (_req, res) => {
-    res.json({
-      object: 'list',
+  const typedApp = app.withTypeProvider<ZodTypeProvider>();
+
+  // Register /v1/chat/completions and alias /chat/completions
+  typedApp.post(
+    "/v1/chat/completions",
+    {
+      schema: {
+        body: OpenAIChatCompletionRequestSchema,
+      },
+    },
+    handler,
+  );
+
+  typedApp.post(
+    "/chat/completions",
+    {
+      schema: {
+        body: OpenAIChatCompletionRequestSchema,
+      },
+    },
+    handler,
+  );
+
+  // The /v1/models and /models endpoint
+  const modelsHandler = async (_req: FastifyRequest, reply: FastifyReply) => {
+    return reply.send({
+      object: "list",
       data: SUPPORTED_MODELS,
     });
-  });
+  };
 
-  return router;
+  app.get("/v1/models", modelsHandler);
+  app.get("/models", modelsHandler);
 }

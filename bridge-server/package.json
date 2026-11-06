@@ -1,6 +1,6 @@
 {
   "name": "@migueldsbatista/gemini-cli-openai-bridge",
-  "version": "0.1.18",
+  "version": "0.5.0",
   "description": "High-performance OpenAI (/v1/chat/completions) & Anthropic (/v1/messages) bridge for Google Gemini CLI. Tailored for OpenCode, Claude Code, Roo Code & Aider.",
   "type": "module",
   "main": "dist/index.js",
@@ -65,10 +65,10 @@
     "command-exists": "^1.2.9",
     "dotenv": "^16.6.1",
     "fastify": "^5.2.1",
-    "fastify-type-provider-zod": "^4.0.2",
+    "fastify-type-provider-zod": "^6.0.0",
     "strip-json-comments": "^3.1.1",
     "yargs": "^17.7.2",
-    "zod": "^3.25.76"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.1.0",

@@ -23,6 +23,10 @@ const __dirname = path.dirname(__filename);
 
 let packageJson: PackageJson | undefined;
 
+/**
+ * Traverses upward from the current module directory to locate and parse `package.json`.
+ * @returns The parsed `PackageJson` object if found, or `undefined`.
+ */
 export async function getPackageJson(): Promise<PackageJson | undefined> {
   if (packageJson) {
     return packageJson;

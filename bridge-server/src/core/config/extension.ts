@@ -8,20 +8,25 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
-export const EXTENSIONS_DIRECTORY_NAME = path.join(".gemini", "extensions");
-export const EXTENSIONS_CONFIG_FILENAME = "gemini-extension.json";
+const EXTENSIONS_DIRECTORY_NAME = path.join(".gemini", "extensions");
+const EXTENSIONS_CONFIG_FILENAME = "gemini-extension.json";
 
 export interface Extension {
   config: ExtensionConfig;
   contextFiles: string[];
 }
 
-export interface ExtensionConfig {
+interface ExtensionConfig {
   name: string;
   version: string;
   contextFileName?: string | string[];
 }
 
+/**
+ * Loads Gemini CLI extensions from the workspace and user home directories.
+ * @param workspaceDir - Root directory of the active workspace.
+ * @returns Deduplicated list of discovered extensions.
+ */
 export function loadExtensions(workspaceDir: string): Extension[] {
   const allExtensions = [
     ...loadExtensionsFromDir(workspaceDir),

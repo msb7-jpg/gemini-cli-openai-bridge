@@ -4,14 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { SandboxConfig } from "@google/gemini-cli-core";
+import { type SandboxConfig } from "@google/gemini-cli-core";
 import commandExists from "command-exists";
 import * as os from "node:os";
-import { getPackageJson } from "../utils/package.js";
-import { Settings } from "./settings.js";
+import { getPackageJson } from "../../shared/package.js";
+import { type Settings } from "./settings.js";
 
-// This is a stripped-down version of the CliArgs interface from config.ts
-// to avoid circular dependencies.
 interface SandboxCliArgs {
   sandbox?: boolean | string;
   "sandbox-image"?: string;
@@ -28,50 +26,46 @@ function isSandboxCommand(value: string): value is SandboxConfig["command"] {
 }
 
 function getSandboxCommand(sandbox?: boolean | string): SandboxConfig["command"] | "" {
-  // If the SANDBOX env var is set, we're already inside the sandbox.
   if (process.env.SANDBOX) {
     return "";
   }
 
-  // note environment variable takes precedence over argument (from command line or settings)
   const environmentConfiguredSandbox = process.env.GEMINI_SANDBOX?.toLowerCase().trim() ?? "";
-  sandbox = environmentConfiguredSandbox?.length > 0 ? environmentConfiguredSandbox : sandbox;
-  if (sandbox === "1" || sandbox === "true") sandbox = true;
-  else if (sandbox === "0" || sandbox === "false" || !sandbox) sandbox = false;
+  let effectiveSandbox =
+    environmentConfiguredSandbox.length > 0 ? environmentConfiguredSandbox : sandbox;
+  if (effectiveSandbox === "1" || effectiveSandbox === "true") effectiveSandbox = true;
+  else if (effectiveSandbox === "0" || effectiveSandbox === "false" || !effectiveSandbox)
+    effectiveSandbox = false;
 
-  if (sandbox === false) {
+  if (effectiveSandbox === false) {
     return "";
   }
 
-  if (typeof sandbox === "string" && sandbox) {
-    if (!isSandboxCommand(sandbox)) {
+  if (typeof effectiveSandbox === "string" && effectiveSandbox) {
+    if (!isSandboxCommand(effectiveSandbox)) {
       console.error(
-        `ERROR: invalid sandbox command '${sandbox}'. Must be one of ${VALID_SANDBOX_COMMANDS.join(
+        `ERROR: invalid sandbox command '${effectiveSandbox}'. Must be one of ${VALID_SANDBOX_COMMANDS.join(
           ", ",
         )}`,
       );
       process.exit(1);
     }
-    // confirm that specified command exists
-    if (commandExists.sync(sandbox)) {
-      return sandbox;
+    if (commandExists.sync(effectiveSandbox)) {
+      return effectiveSandbox;
     }
-    console.error(`ERROR: missing sandbox command '${sandbox}' (from GEMINI_SANDBOX)`);
+    console.error(`ERROR: missing sandbox command '${effectiveSandbox}' (from GEMINI_SANDBOX)`);
     process.exit(1);
   }
 
-  // look for seatbelt, docker, or podman, in that order
-  // for container-based sandboxing, require sandbox to be enabled explicitly
   if (os.platform() === "darwin" && commandExists.sync("sandbox-exec")) {
     return "sandbox-exec";
-  } else if (commandExists.sync("docker") && sandbox === true) {
+  } else if (commandExists.sync("docker") && effectiveSandbox === true) {
     return "docker";
-  } else if (commandExists.sync("podman") && sandbox === true) {
+  } else if (commandExists.sync("podman") && effectiveSandbox === true) {
     return "podman";
   }
 
-  // throw an error if user requested sandbox but no command was found
-  if (sandbox === true) {
+  if (effectiveSandbox === true) {
     console.error(
       "ERROR: GEMINI_SANDBOX is true but failed to determine command for sandbox; " +
         "install docker or podman or specify command in GEMINI_SANDBOX",
@@ -82,6 +76,12 @@ function getSandboxCommand(sandbox?: boolean | string): SandboxConfig["command"]
   return "";
 }
 
+/**
+ * Resolves the container/seatbelt sandbox configuration from settings and CLI args.
+ * @param settings - Merged user and workspace settings.
+ * @param argv - Sandbox CLI flags.
+ * @returns Resolved `SandboxConfig` or `undefined` when sandboxing is disabled.
+ */
 export async function loadSandboxConfig(
   settings: Settings,
   argv: SandboxCliArgs,

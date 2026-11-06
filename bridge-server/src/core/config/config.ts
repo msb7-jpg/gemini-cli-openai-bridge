@@ -14,43 +14,31 @@ import {
   DEFAULT_GEMINI_FLASH_MODEL,
   DEFAULT_GEMINI_EMBEDDING_MODEL,
   FileDiscoveryService,
-  TelemetryTarget,
+  type TelemetryTarget,
 } from "@google/gemini-cli-core";
-import { Settings } from "./settings.js";
-
-import { Extension } from "./extension.js";
+import { type Settings } from "./settings.js";
+import { type Extension } from "./extension.js";
 import * as dotenv from "dotenv";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { loadSandboxConfig } from "./sandboxConfig.js";
 
-// Simple console logger for now - replace with actual logger if available
-const logger = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  debug: (...args: any[]) => console.debug("[DEBUG]", ...args),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  warn: (...args: any[]) => console.warn("[WARN]", ...args),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  error: (...args: any[]) => console.error("[ERROR]", ...args),
+const configLogger = {
+  debug: (...args: unknown[]) => console.debug("[DEBUG]", ...args),
 };
 
-// This function is now a thin wrapper around the server's implementation.
-// It's kept in the CLI for now as App.tsx directly calls it for memory refresh.
-// TODO: Consider if App.tsx should get memory via a server call or if Config should refresh itself.
-export async function loadHierarchicalGeminiMemory(
+async function loadHierarchicalGeminiMemory(
   currentWorkingDirectory: string,
   debugMode: boolean,
   fileService: FileDiscoveryService,
   extensionContextFilePaths: string[] = [],
 ): Promise<{ memoryContent: string; fileCount: number }> {
   if (debugMode) {
-    logger.debug(
+    configLogger.debug(
       `CLI: Delegating hierarchical memory load to server for CWD: ${currentWorkingDirectory}`,
     );
   }
-  // Directly call the server function.
-  // The server function will use its own homedir() for the global path.
   return loadServerHierarchicalMemory(
     currentWorkingDirectory,
     debugMode,
@@ -59,34 +47,38 @@ export async function loadHierarchicalGeminiMemory(
   );
 }
 
+/**
+ * Instantiates and configures the `@google/gemini-cli-core` `Config` instance for the server.
+ * @param settings - Merged user and workspace settings.
+ * @param extensions - Loaded Gemini CLI extensions.
+ * @param sessionId - Unique session identifier.
+ * @param debugMode - Whether debug logging is enabled.
+ * @param loadInternalPrompt - Whether to load hierarchical GEMINI.md prompts.
+ * @param toolsModel - Optional override model for tool execution.
+ * @param targetDir - Root workspace directory for tool execution.
+ * @returns Initialized `Config` object.
+ */
 export async function loadServerConfig(
   settings: Settings,
   extensions: Extension[],
   sessionId: string,
   debugMode: boolean,
   loadInternalPrompt: boolean,
-  toolsModel?: string, // <-- New parameter
+  toolsModel?: string,
   targetDir?: string,
 ): Promise<Config> {
   loadEnvironment();
 
-  // Set the context filename in the server's memoryTool module BEFORE loading memory
-  // TODO(b/343434939): This is a bit of a hack. The contextFileName should ideally be passed
-  // directly to the Config constructor in core, and have core handle setGeminiMdFilename.
-  // However, loadHierarchicalGeminiMemory is called *before* createServerConfig.
   if (settings.contextFileName) {
     setServerGeminiMdFilename(settings.contextFileName);
   } else {
-    // Reset to default if not provided in settings.
     setServerGeminiMdFilename(getCurrentGeminiMdFilename());
   }
 
   const resolvedTargetDir = targetDir || process.cwd();
-
   const extensionContextFilePaths = extensions.flatMap((e) => e.contextFiles);
-
   const fileService = new FileDiscoveryService(resolvedTargetDir);
-  // Call the (now wrapper) loadHierarchicalGeminiMemory which calls the server's version
+
   let memoryContent = "";
   let fileCount = 0;
 
@@ -103,7 +95,6 @@ export async function loadServerConfig(
 
   const sandboxConfig = await loadSandboxConfig(settings, {});
 
-  // Priority: CLI arg > env var > fallback env var > default
   const model =
     toolsModel ||
     process.env.GEMINI_TOOLS_DEFAULT_MODEL ||
@@ -134,7 +125,6 @@ export async function loadServerConfig(
       logPrompts: settings.telemetry?.logPrompts,
     },
     usageStatisticsEnabled: settings.usageStatisticsEnabled ?? true,
-    // Git-aware file filtering settings
     fileFiltering: {
       respectGitIgnore: settings.fileFiltering?.respectGitIgnore,
       enableRecursiveFileSearch: settings.fileFiltering?.enableRecursiveFileSearch,
@@ -148,7 +138,7 @@ export async function loadServerConfig(
     cwd: resolvedTargetDir,
     fileDiscoveryService: fileService,
     bugCommand: settings.bugCommand,
-    model: model, // <-- Use the new model selection logic
+    model,
     extensionContextFilePaths,
   });
 }
@@ -156,7 +146,6 @@ export async function loadServerConfig(
 function findEnvFile(startDir: string): string | null {
   let currentDir = path.resolve(startDir);
   while (true) {
-    // prefer gemini-specific .env under GEMINI_DIR
     const geminiEnvPath = path.join(currentDir, GEMINI_DIR, ".env");
     if (fs.existsSync(geminiEnvPath)) {
       return geminiEnvPath;
@@ -167,7 +156,6 @@ function findEnvFile(startDir: string): string | null {
     }
     const parentDir = path.dirname(currentDir);
     if (parentDir === currentDir || !parentDir) {
-      // check .env under home as fallback, again preferring gemini-specific .env
       const homeGeminiEnvPath = path.join(os.homedir(), GEMINI_DIR, ".env");
       if (fs.existsSync(homeGeminiEnvPath)) {
         return homeGeminiEnvPath;
@@ -182,7 +170,7 @@ function findEnvFile(startDir: string): string | null {
   }
 }
 
-export function loadEnvironment(): void {
+function loadEnvironment(): void {
   const envFilePath = findEnvFile(process.cwd());
   if (envFilePath) {
     dotenv.config({ path: envFilePath, quiet: true });

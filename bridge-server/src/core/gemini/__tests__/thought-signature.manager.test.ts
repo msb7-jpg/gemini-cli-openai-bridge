@@ -1,3 +1,9 @@
+/**
+ * @license
+ * Copyright 2026 Miguel de Sousa Batista
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
@@ -12,9 +18,11 @@ import {
   setCacheFilePathForTest,
   clearThoughtSignatureCache,
   getCacheFilePath,
-} from "../thought-signature-cache.js";
+  recordToolCallSignature,
+  resolveToolCallSignature,
+} from "../thought-signature.manager.js";
 
-describe("thought-signature-cache", () => {
+describe("thought-signature.manager", () => {
   let tempDir: string;
   let testCacheFile: string;
 
@@ -66,10 +74,8 @@ describe("thought-signature-cache", () => {
       map.set("a", "1");
       map.set("b", "2");
 
-      // Access 'a' so 'b' becomes the least recently used
       expect(map.get("a")).toBe("1");
 
-      // Adding 'c' should evict 'b', not 'a'
       map.set("c", "3");
       expect(map.size).toBe(2);
       expect(map.get("a")).toBe("1");
@@ -82,10 +88,8 @@ describe("thought-signature-cache", () => {
       map.set("a", "1");
       map.set("b", "2");
 
-      // Update 'a'
       map.set("a", "1-updated");
 
-      // Adding 'c' should evict 'b'
       map.set("c", "3");
       expect(map.size).toBe(2);
       expect(map.get("a")).toBe("1-updated");
@@ -108,6 +112,15 @@ describe("thought-signature-cache", () => {
 
       map.clear();
       expect(onChange).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe("recordToolCallSignature and resolveToolCallSignature", () => {
+    it("records and resolves signature by toolCallId and toolName fallback", () => {
+      recordToolCallSignature("call_123", "bash", "sig_xyz");
+      expect(resolveToolCallSignature("call_123", "bash")).toBe("sig_xyz");
+      expect(resolveToolCallSignature("call_other", "bash")).toBe("sig_xyz");
+      expect(toolCallNameCache.get("call_123")).toBe("bash");
     });
   });
 
@@ -165,32 +178,19 @@ describe("thought-signature-cache", () => {
       expect(toolCallNameCache.get("call_arr")).toBe("tool_arr");
     });
 
-    it("handles non-existent file gracefully without errors", () => {
+    it("handles non-existent, empty, or corrupted files gracefully", () => {
       expect(fs.existsSync(testCacheFile)).toBe(false);
       expect(() => loadThoughtSignatureCacheFromDisk()).not.toThrow();
       expect(thoughtSignatureCache.size).toBe(0);
-    });
 
-    it("handles empty file gracefully", () => {
       fs.mkdirSync(path.dirname(testCacheFile), { recursive: true });
       fs.writeFileSync(testCacheFile, "   \n  ", "utf-8");
-
       expect(() => loadThoughtSignatureCacheFromDisk()).not.toThrow();
-      expect(thoughtSignatureCache.size).toBe(0);
-    });
 
-    it("handles corrupted JSON gracefully without crashing", () => {
-      fs.mkdirSync(path.dirname(testCacheFile), { recursive: true });
       fs.writeFileSync(testCacheFile, "{ corrupted json: [invalid", "utf-8");
-
       expect(() => loadThoughtSignatureCacheFromDisk()).not.toThrow();
-      expect(thoughtSignatureCache.size).toBe(0);
-    });
 
-    it("handles invalid schema gracefully", () => {
-      fs.mkdirSync(path.dirname(testCacheFile), { recursive: true });
       fs.writeFileSync(testCacheFile, JSON.stringify({ thoughtSignatureCache: 12345 }), "utf-8");
-
       expect(() => loadThoughtSignatureCacheFromDisk()).not.toThrow();
       expect(thoughtSignatureCache.size).toBe(0);
     });
@@ -199,20 +199,15 @@ describe("thought-signature-cache", () => {
       vi.useFakeTimers();
 
       thoughtSignatureCache.set("debounced_key", "debounced_val");
-
-      // Before timer fires, disk file does not exist yet
       expect(fs.existsSync(testCacheFile)).toBe(false);
 
-      // Fast-forward 500ms (not yet reached 1000ms debounce)
       vi.advanceTimersByTime(500);
       expect(fs.existsSync(testCacheFile)).toBe(false);
 
-      // Another write resets/extends the debounce
       thoughtSignatureCache.set("debounced_key_2", "debounced_val_2");
       vi.advanceTimersByTime(500);
       expect(fs.existsSync(testCacheFile)).toBe(false);
 
-      // Advance remaining 500ms (total 1000ms since last write)
       vi.advanceTimersByTime(500);
       expect(fs.existsSync(testCacheFile)).toBe(true);
 

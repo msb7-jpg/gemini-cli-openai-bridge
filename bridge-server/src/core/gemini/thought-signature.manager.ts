@@ -1,7 +1,13 @@
+/**
+ * @license
+ * Copyright 2026 Miguel de Sousa Batista
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { logger } from "./logger.js";
+import { logger } from "../../shared/logger.js";
 
 /**
  * In-memory LRU cache with fixed maximum capacity.
@@ -16,16 +22,11 @@ export class BoundedMap<Key, Value> extends Map<Key, Value> {
     this.onChange = onChange;
   }
 
-  setOnChange(fn?: () => void): void {
-    this.onChange = fn;
-  }
-
   override get(key: Key): Value | undefined {
     if (!super.has(key)) {
       return undefined;
     }
     const value = super.get(key)!;
-    // Refresh recency for true LRU eviction order
     super.delete(key);
     super.set(key, value);
     return value;
@@ -70,15 +71,23 @@ let saveTimeout: NodeJS.Timeout | null = null;
 let isDirty = false;
 let isLoading = false;
 
+/**
+ * Returns the active file path used for persisting thought signatures on disk.
+ * @returns The absolute path to the thought signature cache JSON file.
+ */
 export function getCacheFilePath(): string {
   return customCacheFilePath ?? DEFAULT_CACHE_FILE;
 }
 
+/**
+ * Overrides the disk cache file path for isolated testing.
+ * @param filePath - Custom path or `null` to restore the default path.
+ */
 export function setCacheFilePathForTest(filePath: string | null): void {
   customCacheFilePath = filePath;
 }
 
-export function markDirtyAndScheduleSave(): void {
+function markDirtyAndScheduleSave(): void {
   if (isLoading) {
     return;
   }
@@ -106,6 +115,34 @@ export const lastThoughtSignatureByTool = new BoundedMap<string, string>(
   markDirtyAndScheduleSave,
 );
 export const toolCallNameCache = new BoundedMap<string, string>(2000, markDirtyAndScheduleSave);
+
+/**
+ * Records a tool call's name and optional Gemini thought signature in the LRU caches.
+ * @param toolCallId - Generated or upstream tool call identifier.
+ * @param toolName - Name of the invoked tool/function.
+ * @param thoughtSignature - Optional cryptographic thought signature from Gemini.
+ */
+export function recordToolCallSignature(
+  toolCallId: string,
+  toolName: string,
+  thoughtSignature?: string,
+): void {
+  toolCallNameCache.set(toolCallId, toolName);
+  if (thoughtSignature) {
+    thoughtSignatureCache.set(toolCallId, thoughtSignature);
+    lastThoughtSignatureByTool.set(toolName, thoughtSignature);
+  }
+}
+
+/**
+ * Looks up a cached thought signature for a tool call ID or falls back to the tool name's latest signature.
+ * @param toolCallId - Tool call identifier.
+ * @param toolName - Function name associated with the tool call.
+ * @returns The cached thought signature string if found, or `undefined`.
+ */
+export function resolveToolCallSignature(toolCallId: string, toolName: string): string | undefined {
+  return thoughtSignatureCache.get(toolCallId) || lastThoughtSignatureByTool.get(toolName);
+}
 
 function populateMap(map: BoundedMap<string, string>, data: unknown): void {
   if (!data) return;
@@ -143,7 +180,7 @@ export function loadThoughtSignatureCacheFromDisk(): void {
     if (!content.trim()) {
       return;
     }
-    const data = JSON.parse(content);
+    const data = JSON.parse(content) as Record<string, unknown>;
     isLoading = true;
     try {
       if (data && typeof data === "object") {
@@ -214,7 +251,6 @@ export function clearThoughtSignatureCache(): void {
   }
 }
 
-// Hook into process exit to flush any unwritten cache data
 if (typeof process !== "undefined" && typeof process.on === "function") {
   process.on("beforeExit", () => {
     if (isDirty) {
@@ -228,5 +264,4 @@ if (typeof process !== "undefined" && typeof process.on === "function") {
   });
 }
 
-// Automatically load on initialization
 loadThoughtSignatureCacheFromDisk();

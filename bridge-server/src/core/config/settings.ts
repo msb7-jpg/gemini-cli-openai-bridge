@@ -9,27 +9,30 @@ import * as path from "path";
 import { homedir } from "os";
 import {
   getErrorMessage,
-  BugCommandSettings,
-  TelemetrySettings,
-  AuthType,
+  type BugCommandSettings,
+  type TelemetrySettings,
+  type AuthType,
 } from "@google/gemini-cli-core";
 import stripJsonComments from "strip-json-comments";
-import { type SecurityPolicy } from "../types.js";
 
-export const SETTINGS_DIRECTORY_NAME = ".gemini";
+const SETTINGS_DIRECTORY_NAME = ".gemini";
 export const USER_SETTINGS_DIR = path.join(homedir(), SETTINGS_DIRECTORY_NAME);
-export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, "settings.json");
+const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, "settings.json");
 
-export enum SettingScope {
-  User = "User",
-  Workspace = "Workspace",
+export interface SecurityPolicy {
+  mode?: "read-only" | "edit" | "configured" | "yolo";
+  allowedTools?: string[];
+  shellCommandPolicy?: {
+    allow?: string[];
+    deny?: string[];
+  };
 }
 
-export interface CheckpointingSettings {
+interface CheckpointingSettings {
   enabled?: boolean;
 }
 
-export interface AccessibilitySettings {
+interface AccessibilitySettings {
   disableLoadingPhrases?: boolean;
 }
 
@@ -51,42 +54,36 @@ export interface Settings {
   checkpointing?: CheckpointingSettings;
   autoConfigureMaxOldSpaceSize?: boolean;
   securityPolicy?: SecurityPolicy;
-
-  // Git-aware file filtering settings
   fileFiltering?: {
     respectGitIgnore?: boolean;
     enableRecursiveFileSearch?: boolean;
   };
-
-  // UI setting. Does not display the ANSI-controlled terminal title.
   hideWindowTitle?: boolean;
   hideTips?: boolean;
-
-  // Add other settings here.
 }
 
-export interface SettingsError {
+interface SettingsError {
   message: string;
   path: string;
 }
 
-export interface SettingsFile {
+interface SettingsFile {
   settings: Settings;
   path: string;
 }
-export class LoadedSettings {
+
+class LoadedSettings {
+  readonly user: SettingsFile;
+  readonly workspace: SettingsFile;
+  readonly errors: SettingsError[];
+  private _merged: Settings;
+
   constructor(user: SettingsFile, workspace: SettingsFile, errors: SettingsError[]) {
     this.user = user;
     this.workspace = workspace;
     this.errors = errors;
     this._merged = this.computeMergedSettings();
   }
-
-  readonly user: SettingsFile;
-  readonly workspace: SettingsFile;
-  readonly errors: SettingsError[];
-
-  private _merged: Settings;
 
   get merged(): Settings {
     return this._merged;
@@ -98,28 +95,10 @@ export class LoadedSettings {
       ...this.workspace.settings,
     };
   }
-
-  forScope(scope: SettingScope): SettingsFile {
-    switch (scope) {
-      case SettingScope.User:
-        return this.user;
-      case SettingScope.Workspace:
-        return this.workspace;
-      default:
-        throw new Error(`Invalid scope: ${scope}`);
-    }
-  }
-
-  setValue<Key extends keyof Settings>(scope: SettingScope, key: Key, value: Settings[Key]): void {
-    const settingsFile = this.forScope(scope);
-    settingsFile.settings[key] = value;
-    this._merged = this.computeMergedSettings();
-    saveSettings(settingsFile);
-  }
 }
 
 function resolveEnvVarsInString(value: string): string {
-  const envVarRegex = /\$(?:(\w+)|{([^}]+)})/g; // Find $VAR_NAME or ${VAR_NAME}
+  const envVarRegex = /\$(?:(\w+)|{([^}]+)})/g;
   return value.replace(envVarRegex, (match, varName1, varName2) => {
     const varName = varName1 || varName2;
     if (process && process.env && typeof process.env[varName] === "string") {
@@ -166,7 +145,6 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
   let workspaceSettings: Settings = {};
   const settingsErrors: SettingsError[] = [];
 
-  // Load user settings
   try {
     if (fs.existsSync(USER_SETTINGS_PATH)) {
       const userContent = fs.readFileSync(USER_SETTINGS_PATH, "utf-8");
@@ -182,7 +160,6 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
 
   const workspaceSettingsPath = path.join(workspaceDir, SETTINGS_DIRECTORY_NAME, "settings.json");
 
-  // Load workspace settings
   try {
     if (fs.existsSync(workspaceSettingsPath)) {
       const projectContent = fs.readFileSync(workspaceSettingsPath, "utf-8");
@@ -207,22 +184,4 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
     },
     settingsErrors,
   );
-}
-
-/**
- * Saves settings to disk for a given settings file.
- * @param settingsFile - The settings file to save.
- */
-export function saveSettings(settingsFile: SettingsFile): void {
-  try {
-    // Ensure the directory exists
-    const dirPath = path.dirname(settingsFile.path);
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-
-    fs.writeFileSync(settingsFile.path, JSON.stringify(settingsFile.settings, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Error saving user settings file:", error);
-  }
 }

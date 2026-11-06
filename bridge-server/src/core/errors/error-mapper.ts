@@ -1,9 +1,24 @@
-import { type OpenAIError, type OpenAIErrorResponse } from "../types.js";
+/**
+ * @license
+ * Copyright 2025-2026 Intelligent-Internet / Miguel de Sousa Batista
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+export interface OpenAIError {
+  message: string;
+  type: "invalid_request_error" | "api_error" | "authentication_error" | "server_error";
+  param: string | null;
+  code: string | null;
+}
+
+export interface OpenAIErrorResponse {
+  error: OpenAIError;
+}
 
 /**
  * Maps a caught error from the Gemini API or auth flow to a standard
  * OpenAI error object and a corresponding HTTP status code.
- * @param error The caught unknown error.
+ * @param error - The caught unknown error.
  * @returns An object containing the standard OpenAI error and a suggested status code.
  */
 export function mapErrorToOpenAIError(error: unknown): {
@@ -18,7 +33,6 @@ export function mapErrorToOpenAIError(error: unknown): {
   if (error instanceof Error) {
     message = error.message;
 
-    // Check for specific error messages to determine a more accurate error code.
     if (message.includes("Authentication failed")) {
       statusCode = 401;
       type = "authentication_error";
@@ -46,14 +60,12 @@ export function mapErrorToOpenAIError(error: unknown): {
       type = "server_error";
       code = "server_error";
     }
-    // More Gemini-specific error mappings can be added here if needed.
   }
 
   const openAIError: OpenAIErrorResponse = {
     error: {
       message,
       type,
-      // We generally don't know the specific parameter that caused the error in this context.
       param: null,
       code,
     },

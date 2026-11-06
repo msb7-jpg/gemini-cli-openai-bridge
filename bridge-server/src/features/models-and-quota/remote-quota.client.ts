@@ -23,17 +23,19 @@ export interface RemoteModelQuota {
   includedModels?: string[];
 }
 
-export interface RemoteQuotaResponse {
-  buckets?: Array<{
-    resetTime?: string;
-    tokenType?: string;
-    modelId?: string;
-    remainingFraction?: number;
-    remainingAmount?: string | number;
-  }>;
+interface RemoteQuotaBucket {
+  resetTime?: string;
+  tokenType?: string;
+  modelId?: string;
+  remainingFraction?: number;
+  remainingAmount?: string | number;
 }
 
-export function formatResetTime(resetTimeIso: string): string {
+interface RemoteQuotaResponse {
+  buckets?: RemoteQuotaBucket[];
+}
+
+function formatResetTime(resetTimeIso: string): string {
   try {
     const resetDate = new Date(resetTimeIso);
     if (isNaN(resetDate.getTime())) return "";
@@ -59,7 +61,7 @@ export function formatResetTime(resetTimeIso: string): string {
   }
 }
 
-export function getModelTier(modelId: string): "Flash Lite" | "Flash" | "Pro" {
+function getModelTier(modelId: string): "Flash Lite" | "Flash" | "Pro" {
   const lower = modelId.toLowerCase();
   if (lower.includes("flash-lite") || lower.includes("flash_lite")) {
     return "Flash Lite";
@@ -70,11 +72,105 @@ export function getModelTier(modelId: string): "Flash Lite" | "Flash" | "Pro" {
   return "Pro";
 }
 
-export class RemoteQuotaClient {
+function parseBucketToRemoteQuota(bucket: RemoteQuotaBucket): RemoteModelQuota | null {
+  if (!bucket.modelId || bucket.remainingFraction === undefined) return null;
+
+  const fraction = Math.min(Math.max(bucket.remainingFraction, 0), 1);
+  const usedFraction = 1 - fraction;
+  const usedPercentage = Math.round(usedFraction * 100);
+  const remainingPercentage = 100 - usedPercentage;
+  const resetTime = bucket.resetTime;
+  const resetsIn = resetTime ? formatResetTime(resetTime) : undefined;
+  const tier = getModelTier(bucket.modelId);
+
+  let remainingAmount: number | undefined;
+  let limit: number | undefined;
+
+  if (bucket.remainingAmount !== undefined) {
+    remainingAmount =
+      typeof bucket.remainingAmount === "number"
+        ? bucket.remainingAmount
+        : parseInt(bucket.remainingAmount, 10);
+    if (fraction > 0 && !isNaN(remainingAmount)) {
+      limit = Math.round(remainingAmount / fraction);
+    }
+  }
+
+  return {
+    modelId: bucket.modelId,
+    tier,
+    tokenType: bucket.tokenType || "REQUESTS",
+    remainingFraction: fraction,
+    remainingPercentage,
+    usedPercentage,
+    remainingAmount,
+    limit,
+    resetTime,
+    resetsIn,
+  };
+}
+
+function buildTierSummaries(rawItems: RemoteModelQuota[]): RemoteModelQuota[] {
+  const tierMap = new Map<
+    string,
+    { tier: string; remainingFraction: number; resetTime?: string; models: string[] }
+  >();
+  for (const item of rawItems) {
+    const tierName = item.tier || "Flash";
+    const existing = tierMap.get(tierName);
+    if (!existing) {
+      tierMap.set(tierName, {
+        tier: tierName,
+        remainingFraction: item.remainingFraction,
+        resetTime: item.resetTime,
+        models: [item.modelId],
+      });
+    } else {
+      if (!existing.models.includes(item.modelId)) {
+        existing.models.push(item.modelId);
+      }
+      if (item.remainingFraction < existing.remainingFraction) {
+        existing.remainingFraction = item.remainingFraction;
+        existing.resetTime = item.resetTime;
+      }
+    }
+  }
+
+  const tierSummaryItems: RemoteModelQuota[] = [];
+  const tierOrder = ["Flash", "Flash Lite", "Pro"];
+  for (const tierName of tierOrder) {
+    const group = tierMap.get(tierName);
+    if (group) {
+      const usedPct = Math.round((1 - group.remainingFraction) * 100);
+      tierSummaryItems.push({
+        modelId: tierName.toLowerCase().replace(/\s+/g, "-"),
+        name: tierName,
+        tier: tierName,
+        tokenType: "REQUESTS",
+        remainingFraction: group.remainingFraction,
+        remainingPercentage: 100 - usedPct,
+        usedPercentage: usedPct,
+        resetTime: group.resetTime,
+        resetsIn: group.resetTime ? formatResetTime(group.resetTime) : undefined,
+        includedModels: group.models,
+      });
+    }
+  }
+  return tierSummaryItems;
+}
+
+/**
+ * Client for fetching upstream Google Cloud Code user quota buckets via OAuth credentials.
+ */
+class RemoteQuotaClient {
   private lastFetchTime = 0;
   private cachedQuotas: RemoteModelQuota[] = [];
-  private cacheTtlMs = 15_000; // cache for 15s to be fast and not spam Google API
+  private cacheTtlMs = 15_000;
 
+  /**
+   * Fetches and caches remote model quota buckets from Google Cloud Code API.
+   * @returns Array of tier summaries and individual remote model quota buckets.
+   */
   public async fetchRemoteQuotas(): Promise<RemoteModelQuota[]> {
     const now = Date.now();
     if (this.cachedQuotas.length > 0 && now - this.lastFetchTime < this.cacheTtlMs) {
@@ -111,93 +207,11 @@ export class RemoteQuotaClient {
         return this.cachedQuotas;
       }
 
-      const rawItems: RemoteModelQuota[] = [];
-      for (const bucket of data.buckets) {
-        if (!bucket.modelId || bucket.remainingFraction === undefined) continue;
+      const rawItems = data.buckets
+        .map(parseBucketToRemoteQuota)
+        .filter((item): item is RemoteModelQuota => item !== null);
+      const tierSummaryItems = buildTierSummaries(rawItems);
 
-        const fraction = Math.min(Math.max(bucket.remainingFraction, 0), 1);
-        const usedFraction = 1 - fraction;
-        const usedPercentage = Math.round(usedFraction * 100);
-        const remainingPercentage = 100 - usedPercentage;
-        const resetTime = bucket.resetTime;
-        const resetsIn = resetTime ? formatResetTime(resetTime) : undefined;
-        const tier = getModelTier(bucket.modelId);
-
-        let remainingAmount: number | undefined;
-        let limit: number | undefined;
-
-        if (bucket.remainingAmount !== undefined) {
-          remainingAmount =
-            typeof bucket.remainingAmount === "number"
-              ? bucket.remainingAmount
-              : parseInt(bucket.remainingAmount, 10);
-          if (fraction > 0 && !isNaN(remainingAmount)) {
-            limit = Math.round(remainingAmount / fraction);
-          }
-        }
-
-        rawItems.push({
-          modelId: bucket.modelId,
-          tier,
-          tokenType: bucket.tokenType || "REQUESTS",
-          remainingFraction: fraction,
-          remainingPercentage,
-          usedPercentage,
-          remainingAmount,
-          limit,
-          resetTime,
-          resetsIn,
-        });
-      }
-
-      // Group by Tier (like Gemini CLI ModelQuotaDisplay)
-      const tierMap = new Map<
-        string,
-        { tier: string; remainingFraction: number; resetTime?: string; models: string[] }
-      >();
-      for (const item of rawItems) {
-        const tierName = item.tier || "Flash";
-        const existing = tierMap.get(tierName);
-        if (!existing) {
-          tierMap.set(tierName, {
-            tier: tierName,
-            remainingFraction: item.remainingFraction,
-            resetTime: item.resetTime,
-            models: [item.modelId],
-          });
-        } else {
-          if (!existing.models.includes(item.modelId)) {
-            existing.models.push(item.modelId);
-          }
-          if (item.remainingFraction < existing.remainingFraction) {
-            existing.remainingFraction = item.remainingFraction;
-            existing.resetTime = item.resetTime;
-          }
-        }
-      }
-
-      const tierSummaryItems: RemoteModelQuota[] = [];
-      const tierOrder = ["Flash", "Flash Lite", "Pro"];
-      for (const tierName of tierOrder) {
-        const group = tierMap.get(tierName);
-        if (group) {
-          const usedPct = Math.round((1 - group.remainingFraction) * 100);
-          tierSummaryItems.push({
-            modelId: tierName.toLowerCase().replace(/\s+/g, "-"),
-            name: tierName,
-            tier: tierName,
-            tokenType: "REQUESTS",
-            remainingFraction: group.remainingFraction,
-            remainingPercentage: 100 - usedPct,
-            usedPercentage: usedPct,
-            resetTime: group.resetTime,
-            resetsIn: group.resetTime ? formatResetTime(group.resetTime) : undefined,
-            includedModels: group.models,
-          });
-        }
-      }
-
-      // Return tier summaries as primary items, and raw items appended
       this.cachedQuotas = [...tierSummaryItems, ...rawItems];
       this.lastFetchTime = now;
       return this.cachedQuotas;
@@ -210,7 +224,6 @@ export class RemoteQuotaClient {
     if (process.env.GOOGLE_CLOUD_PROJECT) return process.env.GOOGLE_CLOUD_PROJECT;
     if (process.env.GOOGLE_CLOUD_PROJECT_ID) return process.env.GOOGLE_CLOUD_PROJECT_ID;
 
-    // Check ~/.zshrc or ~/.bashrc
     try {
       const zshrcPath = path.join(os.homedir(), ".zshrc");
       if (fs.existsSync(zshrcPath)) {
@@ -222,12 +235,11 @@ export class RemoteQuotaClient {
       // ignore
     }
 
-    // Default to moto-gemini-assist if user belongs to Motorola
     try {
       const accountsPath = path.join(os.homedir(), ".gemini", "google_accounts.json");
       if (fs.existsSync(accountsPath)) {
         const raw = fs.readFileSync(accountsPath, "utf-8");
-        const accounts = JSON.parse(raw);
+        const accounts = JSON.parse(raw) as { active?: string };
         if (accounts.active && accounts.active.includes("motorola.com")) {
           return "moto-gemini-assist";
         }
@@ -244,7 +256,7 @@ export class RemoteQuotaClient {
     try {
       if (!fs.existsSync(credsPath)) return null;
       const raw = fs.readFileSync(credsPath, "utf-8");
-      const creds = JSON.parse(raw);
+      const creds = JSON.parse(raw) as { access_token?: string };
       if (creds && typeof creds.access_token === "string") {
         return creds.access_token;
       }

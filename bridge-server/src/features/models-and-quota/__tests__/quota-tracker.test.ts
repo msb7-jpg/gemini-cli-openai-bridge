@@ -5,9 +5,14 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { QuotaTracker } from "../quota-tracker.js";
+import { QuotaTracker } from "../quota-tracker.service.js";
+import {
+  QuotaSnapshotSchema,
+  TokenUsageSchema,
+  ModelsListResponseSchema,
+} from "../quota.schema.js";
 
-describe("QuotaTracker", () => {
+describe("QuotaTracker & Quota Schemas", () => {
   let tracker: QuotaTracker;
 
   beforeEach(() => {
@@ -76,5 +81,70 @@ describe("QuotaTracker", () => {
     expect(headers["x-ratelimit-limit-requests"]).toBe("60");
     expect(headers["x-ratelimit-remaining-requests"]).toBe("59");
     expect(headers["x-ratelimit-reset-requests"]).toBeDefined();
+  });
+
+  it("validates TokenUsage, QuotaSnapshot, and ModelsListResponse Zod 4 schemas", () => {
+    const usage = TokenUsageSchema.parse({});
+    expect(usage.promptTokens).toBe(0);
+    expect(usage.completionTokens).toBe(0);
+    expect(usage.cachedTokens).toBe(0);
+    expect(usage.totalTokens).toBe(0);
+
+    const snapshot = {
+      status: "healthy",
+      authType: "oauth",
+      uptimeSeconds: 3600,
+      requests: {
+        total: 10,
+        rpm: { used: 2, limit: 60, remaining: 58, windowSeconds: 60 },
+        rpd: { used: 10, limit: 1000, remaining: 990, windowHours: 24 },
+      },
+      tokens: {
+        promptTokens: 100,
+        completionTokens: 50,
+        cachedTokens: 0,
+        totalTokens: 150,
+      },
+      byModel: {
+        "gemini-2.5-flash": {
+          requests: 10,
+          tokens: {
+            promptTokens: 100,
+            completionTokens: 50,
+            cachedTokens: 0,
+            totalTokens: 150,
+          },
+        },
+      },
+      remoteModelQuotas: [
+        { model: "gemini-2.5-pro", percentage: 0.8, resetTime: "2026-11-07T00:00:00Z" },
+      ],
+      proQuotaExceeded: false,
+      genericQuotaExceeded: false,
+      retryAfterSeconds: 0,
+      retryUntil: null,
+      lastQuotaError: null,
+      lastQuotaErrorTime: null,
+    };
+
+    const parsedSnapshot = QuotaSnapshotSchema.parse(snapshot);
+    expect(parsedSnapshot.status).toBe("healthy");
+    expect(parsedSnapshot.requests.rpm.remaining).toBe(58);
+    expect(parsedSnapshot.remoteModelQuotas?.[0].model).toBe("gemini-2.5-pro");
+
+    const modelsResponse = ModelsListResponseSchema.parse({
+      object: "list",
+      data: [
+        {
+          id: "gemini-2.5-flash",
+          object: "model",
+          created: 1700000000,
+          owned_by: "google",
+        },
+      ],
+    });
+    expect(modelsResponse.object).toBe("list");
+    expect(modelsResponse.data).toHaveLength(1);
+    expect(modelsResponse.data[0].id).toBe("gemini-2.5-flash");
   });
 });

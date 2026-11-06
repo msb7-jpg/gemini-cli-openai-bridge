@@ -4,25 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { remoteQuotaClient, type RemoteModelQuota } from "./remote-quota-client.js";
+import { remoteQuotaClient, type RemoteModelQuota } from "./remote-quota.client.js";
+import type { TokenUsage, ModelUsageStats, QuotaWindowStats } from "./quota.schema.js";
 
-export interface TokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  cachedTokens: number;
-  totalTokens: number;
-}
-
-export interface ModelUsageStats {
-  requests: number;
-  tokens: TokenUsage;
-}
-
-export interface QuotaWindowStats {
-  used: number;
-  limit: number;
-  remaining: number;
-}
+export type { TokenUsage, ModelUsageStats, QuotaWindowStats };
 
 export interface QuotaSnapshot {
   status: "healthy" | "pro_quota_exceeded" | "rate_limited";
@@ -44,6 +29,9 @@ export interface QuotaSnapshot {
   lastQuotaErrorTime: number | null;
 }
 
+/**
+ * In-memory token and request rate tracker for the bridge server.
+ */
 export class QuotaTracker {
   private startTime: number = Date.now();
   private authType: string = "unknown";
@@ -80,11 +68,14 @@ export class QuotaTracker {
     if (options?.rpdLimit) this.rpdLimit = options.rpdLimit;
   }
 
+  /**
+   * Configures default RPM/RPD limits based on the active authentication method.
+   * @param authType - Active authentication type string.
+   */
   public setAuthType(authType: string): void {
     this.authType = authType;
     const lower = authType.toLowerCase();
 
-    // Set intelligent defaults based on Gemini CLI docs & auth types
     if (lower.includes("oauth") || lower.includes("code_assist") || lower.includes("cloud")) {
       this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || "60", 10);
       this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || "1000", 10);
@@ -97,10 +88,9 @@ export class QuotaTracker {
     }
   }
 
-  public getAuthType(): string {
-    return this.authType;
-  }
-
+  /**
+   * Records the start of an incoming bridge request for RPM/RPD sliding windows.
+   */
   public recordRequestStart(): void {
     const now = Date.now();
     this.totalRequests++;
@@ -108,6 +98,11 @@ export class QuotaTracker {
     this.cleanTimestamps(now);
   }
 
+  /**
+   * Accumulates prompt, completion, cached, and total token usage globally and per model.
+   * @param model - Model identifier.
+   * @param usage - Token count delta from a completion chunk.
+   */
   public recordUsage(
     model: string,
     usage: {
@@ -141,6 +136,10 @@ export class QuotaTracker {
     this.modelStats.set(model, currentModel);
   }
 
+  /**
+   * Inspects an upstream error to detect rate-limit or Pro quota exhaustion and extracts retry-after cooldowns.
+   * @param error - Caught error object or message.
+   */
   public recordQuotaError(error: unknown): void {
     const errorStr = this.extractErrorMessage(error);
     const now = Date.now();
@@ -167,16 +166,18 @@ export class QuotaTracker {
     if (retryDelaySec > 0) {
       this.retryUntil = now + retryDelaySec * 1000;
     } else {
-      // Default retry period of 60s if not specified
       this.retryUntil = now + 60_000;
     }
   }
 
+  /**
+   * Computes a synchronous snapshot of local quota and token metrics.
+   * @returns Current `QuotaSnapshot`.
+   */
   public getSnapshot(): QuotaSnapshot {
     const now = Date.now();
     this.cleanTimestamps(now);
 
-    // Auto-reset retry cooldown if time has passed
     if (this.retryUntil && now >= this.retryUntil) {
       this.proQuotaExceeded = false;
       this.genericQuotaExceeded = false;
@@ -236,6 +237,10 @@ export class QuotaTracker {
     };
   }
 
+  /**
+   * Computes a quota snapshot enriched with remote Google Cloud Code quota buckets if available.
+   * @returns Promise resolving to the enriched `QuotaSnapshot`.
+   */
   public async getSnapshotAsync(): Promise<QuotaSnapshot> {
     const snapshot = this.getSnapshot();
     try {
@@ -249,6 +254,10 @@ export class QuotaTracker {
     return snapshot;
   }
 
+  /**
+   * Generates standard HTTP rate-limit response headers for the current RPM window.
+   * @returns Record of `x-ratelimit-*` headers.
+   */
   public getRateLimitHeaders(): Record<string, string> {
     const snapshot = this.getSnapshot();
     const rpm = snapshot.requests.rpm;
@@ -313,7 +322,6 @@ export class QuotaTracker {
       }
     }
 
-    // Try parsing from message text: e.g. "Please retry after 42 seconds" or "retry in 30s"
     const match = errorStr.match(/retry(?:-after| after| in)?:?\s*(\d+)\s*(?:s|seconds)?/i);
     if (match && match[1]) {
       const sec = parseInt(match[1], 10);

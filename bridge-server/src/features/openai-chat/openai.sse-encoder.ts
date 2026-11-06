@@ -1,13 +1,15 @@
-import { randomUUID } from "node:crypto";
-import {
-  thoughtSignatureCache,
-  lastThoughtSignatureByTool,
-  toolCallNameCache,
-} from "../utils/thought-signature-cache.js";
-import { type StreamChunk } from "../types.js";
-import { globalQuotaTracker } from "../services/quota-tracker.js";
+/**
+ * @license
+ * Copyright 2025-2026 Intelligent-Internet / Miguel de Sousa Batista
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-// --- OpenAI Response Interfaces ---
+import { randomUUID } from "node:crypto";
+import { type CanonicalStreamEvent } from "../../core/gemini/canonical-ir.types.js";
+import { recordToolCallSignature } from "../../core/gemini/thought-signature.manager.js";
+import { type ProtocolSSEEncoder } from "../../core/sse/sse-pipeline.js";
+import { globalQuotaTracker } from "../models-and-quota/quota-tracker.service.js";
+
 interface OpenAIDelta {
   role?: "assistant";
   content?: string | null;
@@ -39,59 +41,56 @@ interface OpenAIChunk {
   } | null;
 }
 
-// --- New Stateful Transformer ---
-export function createOpenAIStreamTransformer(
-  model: string,
-  debugMode = false,
-): TransformStream<StreamChunk, Uint8Array> {
-  const chatID = `chatcmpl-${randomUUID()}`;
+/**
+ * Creates a stateful `ProtocolSSEEncoder` that converts `CanonicalStreamEvent` items
+ * into OpenAI `chat.completion.chunk` Server-Sent Events.
+ *
+ * @param model - Requested model identifier included in each chunk.
+ * @param debugMode - Whether debug logging is enabled.
+ * @returns Stateful `ProtocolSSEEncoder` instance.
+ */
+export function createOpenAISSEEncoder(model: string, debugMode = false): ProtocolSSEEncoder {
+  const chatId = `chatcmpl-${randomUUID()}`;
   const creationTime = Math.floor(Date.now() / 1000);
-  const encoder = new TextEncoder();
   let isFirstChunk = true;
   let toolCallIndex = 0;
   let usageData: OpenAIChunk["usage"] = null;
 
-  const createChunk = (
+  const formatChunkFrame = (
     delta: OpenAIDelta,
-    finish_reason: string | null = null,
+    finishReason: string | null = null,
     usage: OpenAIChunk["usage"] = null,
-  ): OpenAIChunk => {
+  ): string => {
     const chunk: OpenAIChunk = {
-      id: chatID,
+      id: chatId,
       object: "chat.completion.chunk",
       created: creationTime,
-      model: model,
+      model,
       choices: [
         {
           index: 0,
           delta,
-          finish_reason,
+          finish_reason: finishReason,
         },
       ],
     };
     if (usage) {
       chunk.usage = usage;
     }
-    return chunk;
+    return `data: ${JSON.stringify(chunk)}\n\n`;
   };
 
-  const enqueueChunk = (
-    controller: TransformStreamDefaultController<Uint8Array>,
-    chunk: OpenAIChunk,
-  ) => {
-    const sseString = `data: ${JSON.stringify(chunk)}\n\n`;
-    controller.enqueue(encoder.encode(sseString));
-  };
-
-  return new TransformStream({
-    transform(chunk: StreamChunk, controller) {
+  return {
+    encodeEvent(chunk: CanonicalStreamEvent): string[] {
       if (debugMode) {
         console.log(
           `[Stream Transformer] Received chunk: ${chunk.type}`,
           chunk.data ? JSON.stringify(chunk.data) : "",
         );
       }
-      let delta: OpenAIDelta = {};
+
+      const frames: string[] = [];
+      const delta: OpenAIDelta = {};
 
       if (isFirstChunk) {
         delta.role = "assistant";
@@ -102,36 +101,28 @@ export function createOpenAIStreamTransformer(
         case "text":
           if (chunk.data) {
             delta.content = chunk.data;
-            enqueueChunk(controller, createChunk(delta));
+            frames.push(formatChunkFrame(delta));
           }
           break;
 
         case "tool_code": {
           const { name, args, thoughtSignature } = chunk.data;
-          // IMPORTANT: Embed the function name in the ID so it can be parsed when a tool response is received.
           const toolCallId = `call_${name}_${randomUUID()}`;
-          toolCallNameCache.set(toolCallId, name);
-          if (thoughtSignature) {
-            thoughtSignatureCache.set(toolCallId, thoughtSignature);
-            lastThoughtSignatureByTool.set(name, thoughtSignature);
-          }
+          recordToolCallSignature(toolCallId, name, thoughtSignature);
 
-          // OpenAI streaming tool calls need to be sent in chunks.
-          // 1. Send the chunk containing the function name.
           const nameDelta: OpenAIDelta = {
-            ...delta, // Include role if it's the first chunk
+            ...delta,
             tool_calls: [
               {
                 index: toolCallIndex,
                 id: toolCallId,
                 type: "function",
-                function: { name: name, arguments: "" },
+                function: { name, arguments: "" },
               },
             ],
           };
-          enqueueChunk(controller, createChunk(nameDelta));
+          frames.push(formatChunkFrame(nameDelta));
 
-          // 2. Send the chunk containing the arguments.
           const argsDelta: OpenAIDelta = {
             tool_calls: [
               {
@@ -142,14 +133,13 @@ export function createOpenAIStreamTransformer(
               },
             ],
           };
-          enqueueChunk(controller, createChunk(argsDelta));
+          frames.push(formatChunkFrame(argsDelta));
 
           toolCallIndex++;
           break;
         }
 
         case "reasoning":
-          // These events currently have no direct equivalent in the OpenAI format and can be ignored or logged.
           if (debugMode) {
             console.log(`[Stream Transformer] Ignoring chunk: ${chunk.type}`);
           }
@@ -177,15 +167,13 @@ export function createOpenAIStreamTransformer(
           }
           break;
       }
+
+      return frames;
     },
 
-    flush(controller) {
-      // At the end of the stream, send a finish_reason of 'tool_calls' or 'stop'.
-      const finish_reason = toolCallIndex > 0 ? "tool_calls" : "stop";
-      enqueueChunk(controller, createChunk({}, finish_reason, usageData));
-
-      const doneString = `data: [DONE]\n\n`;
-      controller.enqueue(encoder.encode(doneString));
+    flush(): string[] {
+      const finishReason = toolCallIndex > 0 ? "tool_calls" : "stop";
+      return [formatChunkFrame({}, finishReason, usageData), "data: [DONE]\n\n"];
     },
-  });
+  };
 }

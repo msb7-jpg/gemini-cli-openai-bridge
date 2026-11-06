@@ -4,14 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  readPackageUp,
-  type PackageJson as BasePackageJson,
-} from 'read-package-up';
-import { fileURLToPath } from 'url';
-import path from 'path';
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-export type PackageJson = BasePackageJson & {
+export type PackageJson = {
+  name?: string;
+  version?: string;
+  description?: string;
+  [key: string]: unknown;
   config?: {
     sandboxImageUri?: string;
   };
@@ -27,12 +28,22 @@ export async function getPackageJson(): Promise<PackageJson | undefined> {
     return packageJson;
   }
 
-  const result = await readPackageUp({ cwd: __dirname });
-  if (!result) {
-    // TODO: Maybe bubble this up as an error.
-    return;
+  let currentDir = __dirname;
+  while (true) {
+    const candidate = path.join(currentDir, "package.json");
+    try {
+      const content = await fs.readFile(candidate, "utf-8");
+      packageJson = JSON.parse(content) as PackageJson;
+      return packageJson;
+    } catch {
+      // Not found or error reading/parsing, try parent directory
+    }
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      break;
+    }
+    currentDir = parentDir;
   }
 
-  packageJson = result.packageJson;
-  return packageJson;
+  return undefined;
 }

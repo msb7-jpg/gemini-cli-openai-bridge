@@ -4,18 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+export type { Config } from "@google/gemini-cli-core";
+
 export interface MessageContentPart {
-  type: 'text' | 'image_url';
+  type: "text" | "image_url";
   text?: string;
   image_url?: {
     url: string;
-    detail?: 'low' | 'high' | 'auto';
+    detail?: "low" | "high" | "auto";
   };
 }
 
 export interface OpenAIToolCall {
   id: string;
-  type: 'function';
+  type: "function";
   function: {
     name: string;
     /** A JSON string of arguments. */
@@ -24,7 +26,7 @@ export interface OpenAIToolCall {
 }
 
 export interface OpenAIMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
+  role: "system" | "user" | "assistant" | "tool";
   /** Can be null when tool_calls are present. */
   content: string | null | MessageContentPart[];
   name?: string;
@@ -40,7 +42,7 @@ export interface OpenAIFunction {
 }
 
 export interface OpenAITool {
-  type: 'function';
+  type: "function";
   function: OpenAIFunction;
 }
 
@@ -51,7 +53,7 @@ export interface OpenAIChatCompletionRequest {
   /** Corresponds to Gemini's Tool[] */
   tools?: OpenAITool[];
   /** Corresponds to Gemini's ToolConfig */
-  tool_choice?: any;
+  tool_choice?: unknown;
 }
 
 export interface ReasoningData {
@@ -59,10 +61,10 @@ export interface ReasoningData {
 }
 
 export type StreamChunk =
-  | { type: 'text'; data: string }
-  | { type: 'reasoning'; data: ReasoningData }
+  | { type: "text"; data: string }
+  | { type: "reasoning"; data: ReasoningData }
   | {
-      type: 'tool_code';
+      type: "tool_code";
       data: {
         name: string;
         args: Record<string, unknown>;
@@ -70,7 +72,7 @@ export type StreamChunk =
       };
     }
   | {
-      type: 'usage';
+      type: "usage";
       data: {
         promptTokenCount?: number;
         candidatesTokenCount?: number;
@@ -84,11 +86,7 @@ export type StreamChunk =
  */
 export interface OpenAIError {
   message: string;
-  type:
-    | 'invalid_request_error'
-    | 'api_error'
-    | 'authentication_error'
-    | 'server_error';
+  type: "invalid_request_error" | "api_error" | "authentication_error" | "server_error";
   param: string | null;
   code: string | null;
 }
@@ -101,7 +99,7 @@ export interface OpenAIErrorResponse {
 }
 
 export interface SecurityPolicy {
-  mode?: 'read-only' | 'edit' | 'configured' | 'yolo';
+  mode?: "read-only" | "edit" | "configured" | "yolo";
   allowedTools?: string[];
   shellCommandPolicy?: {
     allow?: string[];
@@ -111,7 +109,7 @@ export interface SecurityPolicy {
 
 // 定义非流式响应中的 message 对象
 export interface OpenAIChatCompletionMessage {
-  role: 'assistant';
+  role: "assistant";
   content: string | null;
   tool_calls?: OpenAIToolCall[];
 }
@@ -120,18 +118,13 @@ export interface OpenAIChatCompletionMessage {
 export interface OpenAIChatCompletionChoice {
   index: number;
   message: OpenAIChatCompletionMessage;
-  finish_reason:
-    | 'stop'
-    | 'length'
-    | 'tool_calls'
-    | 'content_filter'
-    | 'function_call';
+  finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | "function_call";
 }
 
 // 定义完整的非流式响应体
 export interface OpenAIChatCompletion {
   id: string;
-  object: 'chat.completion';
+  object: "chat.completion";
   created: number;
   model: string;
   choices: OpenAIChatCompletionChoice[];

@@ -15,24 +15,24 @@ import {
   DEFAULT_GEMINI_EMBEDDING_MODEL,
   FileDiscoveryService,
   TelemetryTarget,
-} from '@google/gemini-cli-core';
-import { Settings } from './settings.js';
+} from "@google/gemini-cli-core";
+import { Settings } from "./settings.js";
 
-import { Extension } from './extension.js';
-import * as dotenv from 'dotenv';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import { loadSandboxConfig } from './sandboxConfig.js';
+import { Extension } from "./extension.js";
+import * as dotenv from "dotenv";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+import { loadSandboxConfig } from "./sandboxConfig.js";
 
 // Simple console logger for now - replace with actual logger if available
 const logger = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  debug: (...args: any[]) => console.debug('[DEBUG]', ...args),
+  debug: (...args: any[]) => console.debug("[DEBUG]", ...args),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  warn: (...args: any[]) => console.warn('[WARN]', ...args),
+  warn: (...args: any[]) => console.warn("[WARN]", ...args),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  error: (...args: any[]) => console.error('[ERROR]', ...args),
+  error: (...args: any[]) => console.error("[ERROR]", ...args),
 };
 
 // This function is now a thin wrapper around the server's implementation.
@@ -87,7 +87,7 @@ export async function loadServerConfig(
 
   const fileService = new FileDiscoveryService(resolvedTargetDir);
   // Call the (now wrapper) loadHierarchicalGeminiMemory which calls the server's version
-  let memoryContent = '';
+  let memoryContent = "";
   let fileCount = 0;
 
   if (loadInternalPrompt) {
@@ -130,17 +130,14 @@ export async function loadServerConfig(
     telemetry: {
       enabled: settings.telemetry?.enabled,
       target: settings.telemetry?.target as TelemetryTarget,
-      otlpEndpoint:
-        process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??
-        settings.telemetry?.otlpEndpoint,
+      otlpEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? settings.telemetry?.otlpEndpoint,
       logPrompts: settings.telemetry?.logPrompts,
     },
     usageStatisticsEnabled: settings.usageStatisticsEnabled ?? true,
     // Git-aware file filtering settings
     fileFiltering: {
       respectGitIgnore: settings.fileFiltering?.respectGitIgnore,
-      enableRecursiveFileSearch:
-        settings.fileFiltering?.enableRecursiveFileSearch,
+      enableRecursiveFileSearch: settings.fileFiltering?.enableRecursiveFileSearch,
     },
     checkpointing: settings.checkpointing?.enabled,
     proxy:
@@ -160,22 +157,22 @@ function findEnvFile(startDir: string): string | null {
   let currentDir = path.resolve(startDir);
   while (true) {
     // prefer gemini-specific .env under GEMINI_DIR
-    const geminiEnvPath = path.join(currentDir, GEMINI_DIR, '.env');
+    const geminiEnvPath = path.join(currentDir, GEMINI_DIR, ".env");
     if (fs.existsSync(geminiEnvPath)) {
       return geminiEnvPath;
     }
-    const envPath = path.join(currentDir, '.env');
+    const envPath = path.join(currentDir, ".env");
     if (fs.existsSync(envPath)) {
       return envPath;
     }
     const parentDir = path.dirname(currentDir);
     if (parentDir === currentDir || !parentDir) {
       // check .env under home as fallback, again preferring gemini-specific .env
-      const homeGeminiEnvPath = path.join(os.homedir(), GEMINI_DIR, '.env');
+      const homeGeminiEnvPath = path.join(os.homedir(), GEMINI_DIR, ".env");
       if (fs.existsSync(homeGeminiEnvPath)) {
         return homeGeminiEnvPath;
       }
-      const homeEnvPath = path.join(os.homedir(), '.env');
+      const homeEnvPath = path.join(os.homedir(), ".env");
       if (fs.existsSync(homeEnvPath)) {
         return homeEnvPath;
       }

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { type Config, GeminiChat } from '@google/gemini-cli-core';
+import { type Config, GeminiChat } from "@google/gemini-cli-core";
 import {
   type Content,
   type Part,
@@ -12,45 +12,44 @@ import {
   type FunctionDeclaration,
   type GenerateContentConfig,
   FunctionCallingConfigMode,
-} from '@google/genai';
+} from "@google/genai";
 import {
   type OpenAIMessage,
   type MessageContentPart,
   type OpenAIChatCompletionRequest,
   type StreamChunk,
-  type ReasoningData,
-} from './types.js';
-import { logger } from './utils/logger.js';
+} from "./types.js";
+import { logger } from "./utils/logger.js";
 import {
   thoughtSignatureCache,
   lastThoughtSignatureByTool,
   toolCallNameCache,
-} from './utils/thought-signature-cache.js';
-import { resolveModelId } from './utils/model-resolver.js';
+} from "./utils/thought-signature-cache.js";
+import { resolveModelId } from "./utils/model-resolver.js";
 
 const ALLOWED_GEMINI_SCHEMA_KEYS = new Set([
-  'type',
-  'format',
-  'title',
-  'description',
-  'nullable',
-  'enum',
-  'maxItems',
-  'minItems',
-  'properties',
-  'required',
-  'propertyOrdering',
-  'items',
-  'maximum',
-  'minimum',
-  'maxLength',
-  'minLength',
-  'maxProperties',
-  'minProperties',
-  'pattern',
-  'example',
-  'anyOf',
-  'default',
+  "type",
+  "format",
+  "title",
+  "description",
+  "nullable",
+  "enum",
+  "maxItems",
+  "minItems",
+  "properties",
+  "required",
+  "propertyOrdering",
+  "items",
+  "maximum",
+  "minimum",
+  "maxLength",
+  "minLength",
+  "maxProperties",
+  "minProperties",
+  "pattern",
+  "example",
+  "anyOf",
+  "default",
 ]);
 
 /**
@@ -61,7 +60,7 @@ const ALLOWED_GEMINI_SCHEMA_KEYS = new Set([
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function sanitizeGeminiSchema(schema: any): any {
-  if (typeof schema !== 'object' || schema === null) {
+  if (typeof schema !== "object" || schema === null) {
     return schema;
   }
 
@@ -70,42 +69,31 @@ export function sanitizeGeminiSchema(schema: any): any {
   }
 
   // Create a new object, filtering out unsupported keys at the current level.
-  const newSchema: { [key: string]: any } = {};
+  const newSchema: Record<string, unknown> = {};
 
   // Extract / convert numeric bounds
   let minimum = schema.minimum;
   let maximum = schema.maximum;
 
-  if (typeof schema.exclusiveMinimum === 'number' && minimum === undefined) {
-    minimum =
-      schema.type === 'integer'
-        ? schema.exclusiveMinimum + 1
-        : schema.exclusiveMinimum;
+  if (typeof schema.exclusiveMinimum === "number" && minimum === undefined) {
+    minimum = schema.type === "integer" ? schema.exclusiveMinimum + 1 : schema.exclusiveMinimum;
   }
-  if (typeof schema.exclusiveMaximum === 'number' && maximum === undefined) {
-    maximum =
-      schema.type === 'integer'
-        ? schema.exclusiveMaximum - 1
-        : schema.exclusiveMaximum;
+  if (typeof schema.exclusiveMaximum === "number" && maximum === undefined) {
+    maximum = schema.type === "integer" ? schema.exclusiveMaximum - 1 : schema.exclusiveMaximum;
   }
 
   // Handle allOf by merging properties if possible
-  const mergedProperties = { ...(schema.properties || {}) };
-  let mergedRequired = Array.isArray(schema.required)
-    ? [...schema.required]
-    : undefined;
+  const mergedProperties = { ...schema.properties };
+  let mergedRequired = Array.isArray(schema.required) ? [...schema.required] : undefined;
   if (Array.isArray(schema.allOf)) {
     for (const sub of schema.allOf) {
-      if (typeof sub === 'object' && sub !== null) {
+      if (typeof sub === "object" && sub !== null) {
         const sanitizedSub = sanitizeGeminiSchema(sub);
         if (sanitizedSub.properties) {
           Object.assign(mergedProperties, sanitizedSub.properties);
         }
         if (Array.isArray(sanitizedSub.required)) {
-          mergedRequired = [
-            ...(mergedRequired || []),
-            ...sanitizedSub.required,
-          ];
+          mergedRequired = [...(mergedRequired || []), ...sanitizedSub.required];
         }
       }
     }
@@ -151,9 +139,9 @@ export function sanitizeGeminiSchema(schema: any): any {
 
   // Handle type array (e.g. ["string", "null"])
   if (Array.isArray(newSchema.type)) {
-    if (newSchema.type.includes('null')) {
+    if (newSchema.type.includes("null")) {
       newSchema.nullable = true;
-      const nonNullType = newSchema.type.find((t: any) => t !== 'null');
+      const nonNullType = newSchema.type.find((typeItem: unknown) => typeItem !== "null");
       if (nonNullType) {
         newSchema.type = nonNullType;
       } else {
@@ -166,26 +154,29 @@ export function sanitizeGeminiSchema(schema: any): any {
 
   // Ensure enum is string[]
   if (Array.isArray(newSchema.enum)) {
-    newSchema.enum = newSchema.enum.map((item: any) => String(item));
+    newSchema.enum = newSchema.enum.map((item: unknown) => String(item));
   }
 
   // Ensure required is string[]
   if (Array.isArray(newSchema.required)) {
-    newSchema.required = newSchema.required.filter(
-      (item: any) => typeof item === 'string',
+    const filteredRequired = (newSchema.required as unknown[]).filter(
+      (item: unknown) => typeof item === "string",
     );
-    if (newSchema.required.length === 0) {
+    if (filteredRequired.length === 0) {
       delete newSchema.required;
+    } else {
+      newSchema.required = filteredRequired;
     }
   } else if (newSchema.required !== undefined) {
     delete newSchema.required;
   }
 
   // Recurse into nested 'properties'
-  if (newSchema.properties && typeof newSchema.properties === 'object') {
-    const newProperties: { [key: string]: any } = {};
-    for (const key in newSchema.properties) {
-      newProperties[key] = sanitizeGeminiSchema(newSchema.properties[key]);
+  if (newSchema.properties && typeof newSchema.properties === "object") {
+    const propertiesRecord = newSchema.properties as Record<string, unknown>;
+    const newProperties: Record<string, unknown> = {};
+    for (const key in propertiesRecord) {
+      newProperties[key] = sanitizeGeminiSchema(propertiesRecord[key]);
     }
     newSchema.properties = newProperties;
   }
@@ -193,10 +184,7 @@ export function sanitizeGeminiSchema(schema: any): any {
   // Recurse into nested 'items'
   if (newSchema.items) {
     if (Array.isArray(newSchema.items)) {
-      newSchema.items =
-        newSchema.items.length > 0
-          ? sanitizeGeminiSchema(newSchema.items[0])
-          : {};
+      newSchema.items = newSchema.items.length > 0 ? sanitizeGeminiSchema(newSchema.items[0]) : {};
     } else {
       newSchema.items = sanitizeGeminiSchema(newSchema.items);
     }
@@ -215,27 +203,54 @@ export interface ConvertedGeminiMessages {
   systemInstruction?: Content;
 }
 
-export function parseFunctionNameFromId(toolCallId: string): string {
-  if (!toolCallId) return 'unknown_tool';
-  const parts = toolCallId.split('_');
-  if (parts.length > 2 && parts[0] === 'call') {
-    return parts.slice(1, parts.length - 1).join('_');
-  }
-  return 'unknown_tool_from_id';
+interface PartWithThoughtSignature {
+  thoughtSignature?: string;
+  thought_signature?: string;
 }
 
+interface GeminiUsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  cachedContentTokenCount?: number;
+  totalTokenCount?: number;
+}
+
+interface GeminiStreamResponse {
+  usageMetadata?: GeminiUsageMetadata;
+  candidates?: Array<{
+    content?: {
+      parts?: Part[];
+    };
+  }>;
+}
+
+/**
+ * Parses the function name from a tool call ID.
+ * @param toolCallId The tool call identifier.
+ * @returns The parsed function name or fallback string.
+ */
+export function parseFunctionNameFromId(toolCallId: string): string {
+  if (!toolCallId) return "unknown_tool";
+  const parts = toolCallId.split("_");
+  if (parts.length > 2 && parts[0] === "call") {
+    return parts.slice(1, parts.length - 1).join("_");
+  }
+  return "unknown_tool_from_id";
+}
+
+/**
+ * Formats tool response content into a standard record payload.
+ * @param content The raw response content.
+ * @returns An object payload suitable for Gemini functionResponse.
+ */
 export function formatResponsePayload(content: unknown): Record<string, unknown> {
   if (content === null || content === undefined) {
     return { output: null };
   }
-  if (typeof content === 'string') {
+  if (typeof content === "string") {
     try {
       const parsed = JSON.parse(content);
-      if (
-        typeof parsed === 'object' &&
-        parsed !== null &&
-        !Array.isArray(parsed)
-      ) {
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
         return parsed as Record<string, unknown>;
       }
       return { output: parsed };
@@ -243,28 +258,33 @@ export function formatResponsePayload(content: unknown): Record<string, unknown>
       return { output: content };
     }
   }
-  if (typeof content === 'object' && !Array.isArray(content)) {
+  if (typeof content === "object" && !Array.isArray(content)) {
     return content as Record<string, unknown>;
   }
   return { output: content };
 }
 
+/**
+ * Converts an OpenAI assistant message to Gemini Content.
+ * @param msg The assistant message.
+ * @returns The Gemini Content representation.
+ */
 export function convertAssistantMessage(msg: OpenAIMessage): Content {
   const parts: Part[] = [];
 
-  if (msg.content && typeof msg.content === 'string') {
+  if (msg.content && typeof msg.content === "string") {
     parts.push({ text: msg.content });
   }
 
   if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
     for (const toolCall of msg.tool_calls) {
-      if (toolCall.type === 'function' && toolCall.function) {
+      if (toolCall.type === "function" && toolCall.function) {
         let argsObject: Record<string, unknown> = {};
         try {
           argsObject = JSON.parse(toolCall.function.arguments);
         } catch (e) {
           logger.warn(
-            'Failed to parse tool call arguments',
+            "Failed to parse tool call arguments",
             { arguments: toolCall.function.arguments },
             e,
           );
@@ -281,8 +301,9 @@ export function convertAssistantMessage(msg: OpenAIMessage): Content {
           },
         };
         if (signature) {
-          (functionCallPart as any).thoughtSignature = signature;
-          (functionCallPart as any).thought_signature = signature;
+          const partWithSignature = functionCallPart as Part & PartWithThoughtSignature;
+          partWithSignature.thoughtSignature = signature;
+          partWithSignature.thought_signature = signature;
         }
         parts.push(functionCallPart);
       }
@@ -290,40 +311,51 @@ export function convertAssistantMessage(msg: OpenAIMessage): Content {
   }
 
   if (parts.length === 0) {
-    parts.push({ text: '' });
+    parts.push({ text: "" });
   }
 
-  return { role: 'model', parts };
+  return { role: "model", parts };
 }
 
+/**
+ * Converts an OpenAI user message to Gemini Content.
+ * @param msg The user message.
+ * @returns The Gemini Content representation.
+ */
 export function convertUserMessage(msg: OpenAIMessage): Content {
-  if (typeof msg.content === 'string') {
-    return { role: 'user', parts: [{ text: msg.content }] };
+  if (typeof msg.content === "string") {
+    return { role: "user", parts: [{ text: msg.content }] };
   }
 
   if (Array.isArray(msg.content)) {
     const parts = msg.content.reduce<Part[]>((acc, part: MessageContentPart) => {
-      if (part.type === 'text') {
-        acc.push({ text: part.text || '' });
-      } else if (part.type === 'image_url' && part.image_url) {
+      if (part.type === "text") {
+        acc.push({ text: part.text || "" });
+      } else if (part.type === "image_url" && part.image_url) {
         const imageUrl = part.image_url.url;
-        if (imageUrl.startsWith('data:')) {
-          const [mimePart, dataPart] = imageUrl.split(',');
-          const mimeType = mimePart.split(':')[1]?.split(';')[0] || 'image/jpeg';
+        if (imageUrl.startsWith("data:")) {
+          const [mimePart, dataPart] = imageUrl.split(",");
+          const mimeType = mimePart.split(":")[1]?.split(";")[0] || "image/jpeg";
           acc.push({ inlineData: { mimeType, data: dataPart } });
         } else {
-          acc.push({ fileData: { mimeType: 'image/jpeg', fileUri: imageUrl } });
+          acc.push({ fileData: { mimeType: "image/jpeg", fileUri: imageUrl } });
         }
       }
       return acc;
     }, []);
 
-    return { role: 'user', parts: parts.length > 0 ? parts : [{ text: '' }] };
+    return { role: "user", parts: parts.length > 0 ? parts : [{ text: "" }] };
   }
 
-  return { role: 'user', parts: [{ text: '' }] };
+  return { role: "user", parts: [{ text: "" }] };
 }
 
+/**
+ * Converts an array of OpenAI messages into Gemini Contents and optional system instruction.
+ * @param messages The array of OpenAI messages.
+ * @param options Additional conversion options.
+ * @returns Converted Gemini contents and system instruction.
+ */
 export function convertOpenAIMessagesToGemini(
   messages: OpenAIMessage[],
   options?: {
@@ -335,12 +367,12 @@ export function convertOpenAIMessagesToGemini(
   const nonSystemMessages: OpenAIMessage[] = [];
 
   for (const msg of messages) {
-    if (msg.role === 'system') {
-      if (typeof msg.content === 'string' && msg.content.trim()) {
+    if (msg.role === "system") {
+      if (typeof msg.content === "string" && msg.content.trim()) {
         systemParts.push({ text: msg.content });
       } else if (Array.isArray(msg.content)) {
         for (const part of msg.content) {
-          if (part.type === 'text' && part.text) {
+          if (part.type === "text" && part.text) {
             systemParts.push({ text: part.text });
           }
         }
@@ -352,13 +384,13 @@ export function convertOpenAIMessagesToGemini(
 
   let systemInstruction: Content | undefined = undefined;
   if (systemParts.length > 0 && !options?.useInternalPrompt) {
-    systemInstruction = { role: 'system', parts: systemParts };
+    systemInstruction = { role: "system", parts: systemParts };
   }
 
   // Pre-index tool calls from all assistant messages
   const toolCallMap = new Map<string, { id: string; name: string }>();
   for (const msg of nonSystemMessages) {
-    if (msg.role === 'assistant' && Array.isArray(msg.tool_calls)) {
+    if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
       for (const call of msg.tool_calls) {
         if (call.id && call.function?.name) {
           toolCallMap.set(call.id, { id: call.id, name: call.function.name });
@@ -374,20 +406,20 @@ export function convertOpenAIMessagesToGemini(
   while (i < nonSystemMessages.length) {
     const msg = nonSystemMessages[i];
 
-    if (msg.role === 'tool') {
+    if (msg.role === "tool") {
       // Collect ALL consecutive 'tool' messages
       const toolMessages: OpenAIMessage[] = [];
       const toolStartIndex = i;
-      while (i < nonSystemMessages.length && nonSystemMessages[i].role === 'tool') {
+      while (i < nonSystemMessages.length && nonSystemMessages[i].role === "tool") {
         toolMessages.push(nonSystemMessages[i]);
         i++;
       }
 
       // Find the assistant message immediately preceding this tool batch
       let precedingAssistant: OpenAIMessage | undefined;
-      for (let k = toolStartIndex - 1; k >= 0; k--) {
-        if (nonSystemMessages[k].role === 'assistant') {
-          precedingAssistant = nonSystemMessages[k];
+      for (let lookupIndex = toolStartIndex - 1; lookupIndex >= 0; lookupIndex--) {
+        if (nonSystemMessages[lookupIndex].role === "assistant") {
+          precedingAssistant = nonSystemMessages[lookupIndex];
           break;
         }
       }
@@ -422,14 +454,14 @@ export function convertOpenAIMessagesToGemini(
           } else {
             // Try matching unconsumed tool message by name
             const matchIdx = unconsumedToolMsgs.findIndex(
-              m => m.name === call.function.name,
+              (unconsumedMsg) => unconsumedMsg.name === call.function.name,
             );
             if (matchIdx !== -1) {
-              const [m] = unconsumedToolMsgs.splice(matchIdx, 1);
+              const [matchedMsg] = unconsumedToolMsgs.splice(matchIdx, 1);
               functionResponseParts.push({
                 functionResponse: {
                   name: call.function.name,
-                  response: formatResponsePayload(m.content),
+                  response: formatResponsePayload(matchedMsg.content),
                 },
               });
             } else {
@@ -440,7 +472,7 @@ export function convertOpenAIMessagesToGemini(
               functionResponseParts.push({
                 functionResponse: {
                   name: call.function.name,
-                  response: { error: 'No response provided for this tool call' },
+                  response: { error: "No response provided for this tool call" },
                 },
               });
             }
@@ -464,7 +496,7 @@ export function convertOpenAIMessagesToGemini(
       }
 
       for (const remaining of unconsumedToolMsgs) {
-        const funcName = remaining.name || 'unknown_tool';
+        const funcName = remaining.name || "unknown_tool";
         functionResponseParts.push({
           functionResponse: {
             name: funcName,
@@ -475,17 +507,17 @@ export function convertOpenAIMessagesToGemini(
 
       if (functionResponseParts.length > 0) {
         contents.push({
-          role: 'user',
+          role: "user",
           parts: functionResponseParts,
         });
       }
       continue;
     }
 
-    if (msg.role === 'assistant') {
+    if (msg.role === "assistant") {
       const assistantContent = convertAssistantMessage(msg);
       const prev = contents.length > 0 ? contents[contents.length - 1] : undefined;
-      if (prev && prev.role === 'model') {
+      if (prev && prev.role === "model") {
         if (!prev.parts) prev.parts = [];
         if (assistantContent.parts) {
           prev.parts.push(...assistantContent.parts);
@@ -501,11 +533,11 @@ export function convertOpenAIMessagesToGemini(
     const userContent = convertUserMessage(msg);
     const prev = contents.length > 0 ? contents[contents.length - 1] : undefined;
     const prevIsFunctionResponse = prev?.parts
-      ? prev.parts.some(p => 'functionResponse' in p)
+      ? prev.parts.some((part) => "functionResponse" in part)
       : false;
 
     // Only merge into prev if prev is user AND is not a functionResponse turn
-    if (prev && prev.role === 'user' && !prevIsFunctionResponse) {
+    if (prev && prev.role === "user" && !prevIsFunctionResponse) {
       if (!prev.parts) prev.parts = [];
       if (userContent.parts) {
         prev.parts.push(...userContent.parts);
@@ -517,8 +549,8 @@ export function convertOpenAIMessagesToGemini(
   }
 
   // Ensure first turn starts with 'user'
-  if (contents.length > 0 && contents[0].role === 'model') {
-    contents.unshift({ role: 'user', parts: [{ text: 'Hello' }] });
+  if (contents.length > 0 && contents[0].role === "model") {
+    contents.unshift({ role: "user", parts: [{ text: "Hello" }] });
   }
 
   return { contents, systemInstruction };
@@ -537,20 +569,20 @@ export class GeminiApiClient {
 
   /**
    * Converts OpenAI tool definitions to Gemini tool definitions.
+   * @param openAITools OpenAI tool definitions to convert.
+   * @returns Array of Gemini tool configurations, or undefined.
    */
   private convertOpenAIToolsToGemini(
-    openAITools?: OpenAIChatCompletionRequest['tools'],
+    openAITools?: OpenAIChatCompletionRequest["tools"],
   ): Tool[] | undefined {
     if (!openAITools || openAITools.length === 0) {
       return undefined;
     }
 
     const functionDeclarations: FunctionDeclaration[] = openAITools
-      .filter(tool => tool.type === 'function' && tool.function)
-      .map(tool => {
-        const sanitizedParameters = sanitizeGeminiSchema(
-          tool.function.parameters,
-        );
+      .filter((tool) => tool.type === "function" && tool.function)
+      .map((tool) => {
+        const sanitizedParameters = sanitizeGeminiSchema(tool.function.parameters);
         return {
           name: tool.function.name,
           description: tool.function.description,
@@ -568,6 +600,8 @@ export class GeminiApiClient {
   /**
    * Parses the original function name from a tool_call_id.
    * ID format: "call_{functionName}_{uuid}"
+   * @param toolCallId The tool call identifier.
+   * @returns The extracted function name.
    */
   private parseFunctionNameFromId(toolCallId: string): string {
     return parseFunctionNameFromId(toolCallId);
@@ -575,18 +609,20 @@ export class GeminiApiClient {
 
   /**
    * Converts an OpenAI-formatted message to a Gemini-formatted Content object.
+   * @param msg The OpenAI message.
+   * @returns The converted Gemini Content object.
    */
   private openAIMessageToGemini(msg: OpenAIMessage): Content {
-    if (msg.role === 'assistant') {
+    if (msg.role === "assistant") {
       return convertAssistantMessage(msg);
     }
-    if (msg.role === 'tool') {
+    if (msg.role === "tool") {
       return {
-        role: 'user',
+        role: "user",
         parts: [
           {
             functionResponse: {
-              name: this.parseFunctionNameFromId(msg.tool_call_id || ''),
+              name: this.parseFunctionNameFromId(msg.tool_call_id || ""),
               response: formatResponsePayload(msg.content),
             },
           },
@@ -598,36 +634,34 @@ export class GeminiApiClient {
 
   /**
    * Sends a streaming request to the Gemini API.
+   * @param options The chat completion request options.
+   * @returns An async generator yielding stream chunks.
    */
-  public async sendMessageStream({
-    model,
-    messages,
-    tools,
-    tool_choice,
-  }: {
+  public async sendMessageStream(options: {
     model: string;
     messages: OpenAIMessage[];
-    tools?: OpenAIChatCompletionRequest['tools'];
-    tool_choice?: any;
+    tools?: OpenAIChatCompletionRequest["tools"];
+    tool_choice?: unknown;
   }): Promise<AsyncGenerator<StreamChunk>> {
+    const { model, messages, tools, tool_choice } = options;
     const useInternalPrompt = !!this.config.getUserMemory();
 
-    const { contents, systemInstruction } = convertOpenAIMessagesToGemini(
-      messages,
-      { useInternalPrompt, debugMode: this.debugMode },
-    );
+    const { contents, systemInstruction } = convertOpenAIMessagesToGemini(messages, {
+      useInternalPrompt,
+      debugMode: this.debugMode,
+    });
 
     if (contents.length === 0) {
-      throw new Error('No message to send.');
+      throw new Error("No message to send.");
     }
 
     const lastMessage = contents.pop()!;
     const history = contents;
 
     const canonicalModel = resolveModelId(model);
-    logger.info('Calling Gemini API', { model: canonicalModel, requestedModel: model });
+    logger.info("Calling Gemini API", { model: canonicalModel, requestedModel: model });
 
-    logger.debug(this.debugMode, 'Sending request to Gemini', {
+    logger.debug(this.debugMode, "Sending request to Gemini", {
       historyLength: history.length,
       lastMessage,
     });
@@ -635,7 +669,7 @@ export class GeminiApiClient {
     // Create a proxy of config so GeminiChat uses the requested model instead of global default
     const requestConfig = new Proxy(this.config, {
       get(target, prop, receiver) {
-        if (prop === 'getModel') {
+        if (prop === "getModel") {
           return () => canonicalModel;
         }
         return Reflect.get(target, prop, receiver);
@@ -643,12 +677,7 @@ export class GeminiApiClient {
     });
 
     // Create a new, isolated chat session for each request.
-    const oneShotChat = new GeminiChat(
-      requestConfig,
-      this.contentGenerator,
-      {},
-      history,
-    );
+    const oneShotChat = new GeminiChat(requestConfig, this.contentGenerator, {}, history);
 
     const geminiTools = this.convertOpenAIToolsToGemini(tools);
 
@@ -657,54 +686,56 @@ export class GeminiApiClient {
       generationConfig.systemInstruction = systemInstruction;
     }
 
-    if (tool_choice && tool_choice !== 'auto') {
+    if (tool_choice && tool_choice !== "auto" && typeof tool_choice === "object") {
+      const choice = tool_choice as { type?: string; function?: { name?: string } };
       generationConfig.toolConfig = {
         functionCallingConfig: {
           mode:
-            tool_choice.type === 'function'
+            choice.type === "function"
               ? FunctionCallingConfigMode.ANY
               : FunctionCallingConfigMode.AUTO,
-          allowedFunctionNames: tool_choice.function
-            ? [tool_choice.function.name]
-            : undefined,
+          allowedFunctionNames: choice.function?.name ? [choice.function.name] : undefined,
         },
       };
     }
 
-    
     const prompt_id = Math.random().toString(16).slice(2);
-    const geminiStream = await oneShotChat.sendMessageStream({
-      message: lastMessage.parts || [],
-      config: {
-        tools: geminiTools,
-        ...generationConfig,
+    const geminiStream = await oneShotChat.sendMessageStream(
+      {
+        message: lastMessage.parts || [],
+        config: {
+          tools: geminiTools,
+          ...generationConfig,
+        },
       },
-    }, prompt_id);
+      prompt_id,
+    );
 
-    logger.debug(this.debugMode, 'Got stream from Gemini.');
+    logger.debug(this.debugMode, "Got stream from Gemini.");
 
     // Transform the event stream to a simpler StreamChunk stream
     return (async function* (): AsyncGenerator<StreamChunk> {
       for await (const response of geminiStream) {
-        if ((response as any).usageMetadata) {
-          yield { type: 'usage', data: (response as any).usageMetadata };
+        const streamResponse = response as unknown as GeminiStreamResponse;
+        if (streamResponse.usageMetadata) {
+          yield { type: "usage", data: streamResponse.usageMetadata };
         }
-        const parts = response.candidates?.[0]?.content?.parts || [];
+        const parts = streamResponse.candidates?.[0]?.content?.parts || [];
         for (const part of parts) {
           if (part.text) {
-            yield { type: 'text', data: part.text };
+            yield { type: "text", data: part.text };
           }
           if (part.functionCall && part.functionCall.name) {
+            const partWithSignature = part as unknown as PartWithThoughtSignature;
             const thoughtSignature =
-              (part as any).thoughtSignature ||
-              (part as any).thought_signature ||
+              partWithSignature.thoughtSignature ||
+              partWithSignature.thought_signature ||
               undefined;
             yield {
-              type: 'tool_code',
+              type: "tool_code",
               data: {
                 name: part.functionCall.name,
-                args:
-                  (part.functionCall.args as Record<string, unknown>) ?? {},
+                args: (part.functionCall.args as Record<string, unknown>) ?? {},
                 thoughtSignature,
               },
             };

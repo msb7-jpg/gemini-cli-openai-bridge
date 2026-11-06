@@ -1,12 +1,12 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { logger } from './logger.js';
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { logger } from "./logger.js";
 
 /**
  * In-memory LRU cache with fixed maximum capacity.
  */
-export class BoundedMap<K, V> extends Map<K, V> {
+export class BoundedMap<Key, Value> extends Map<Key, Value> {
   private readonly maxSize: number;
   private onChange?: () => void;
 
@@ -20,7 +20,7 @@ export class BoundedMap<K, V> extends Map<K, V> {
     this.onChange = fn;
   }
 
-  override get(key: K): V | undefined {
+  override get(key: Key): Value | undefined {
     if (!super.has(key)) {
       return undefined;
     }
@@ -31,7 +31,7 @@ export class BoundedMap<K, V> extends Map<K, V> {
     return value;
   }
 
-  override set(key: K, value: V): this {
+  override set(key: Key, value: Value): this {
     if (this.has(key)) {
       super.delete(key);
     } else if (this.size >= this.maxSize) {
@@ -45,7 +45,7 @@ export class BoundedMap<K, V> extends Map<K, V> {
     return this;
   }
 
-  override delete(key: K): boolean {
+  override delete(key: Key): boolean {
     const res = super.delete(key);
     if (res) {
       this.onChange?.();
@@ -62,8 +62,8 @@ export class BoundedMap<K, V> extends Map<K, V> {
   }
 }
 
-const DEFAULT_CACHE_DIR = path.join(os.homedir(), '.gemini');
-const DEFAULT_CACHE_FILE = path.join(DEFAULT_CACHE_DIR, 'thought-signatures.json');
+const DEFAULT_CACHE_DIR = path.join(os.homedir(), ".gemini");
+const DEFAULT_CACHE_FILE = path.join(DEFAULT_CACHE_DIR, "thought-signatures.json");
 
 let customCacheFilePath: string | null = null;
 let saveTimeout: NodeJS.Timeout | null = null;
@@ -91,30 +91,38 @@ export function markDirtyAndScheduleSave(): void {
     try {
       flushThoughtSignatureCache();
     } catch (err) {
-      logger.warn('Error during debounced thought signature cache flush:', err);
+      logger.warn("Error during debounced thought signature cache flush:", err);
     }
   }, 1000);
 
-  if (typeof saveTimeout.unref === 'function') {
+  if (typeof saveTimeout.unref === "function") {
     saveTimeout.unref();
   }
 }
 
 export const thoughtSignatureCache = new BoundedMap<string, string>(2000, markDirtyAndScheduleSave);
-export const lastThoughtSignatureByTool = new BoundedMap<string, string>(500, markDirtyAndScheduleSave);
+export const lastThoughtSignatureByTool = new BoundedMap<string, string>(
+  500,
+  markDirtyAndScheduleSave,
+);
 export const toolCallNameCache = new BoundedMap<string, string>(2000, markDirtyAndScheduleSave);
 
 function populateMap(map: BoundedMap<string, string>, data: unknown): void {
   if (!data) return;
   if (Array.isArray(data)) {
     for (const item of data) {
-      if (Array.isArray(item) && item.length >= 2 && typeof item[0] === 'string' && typeof item[1] === 'string') {
+      if (
+        Array.isArray(item) &&
+        item.length >= 2 &&
+        typeof item[0] === "string" &&
+        typeof item[1] === "string"
+      ) {
         map.set(item[0], item[1]);
       }
     }
-  } else if (typeof data === 'object') {
+  } else if (typeof data === "object") {
     for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
-      if (typeof value === 'string') {
+      if (typeof value === "string") {
         map.set(key, value);
       }
     }
@@ -131,14 +139,14 @@ export function loadThoughtSignatureCacheFromDisk(): void {
     if (!fs.existsSync(filePath)) {
       return;
     }
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const content = fs.readFileSync(filePath, "utf-8");
     if (!content.trim()) {
       return;
     }
     const data = JSON.parse(content);
     isLoading = true;
     try {
-      if (data && typeof data === 'object') {
+      if (data && typeof data === "object") {
         populateMap(thoughtSignatureCache, data.thoughtSignatureCache);
         populateMap(lastThoughtSignatureByTool, data.lastThoughtSignatureByTool);
         populateMap(toolCallNameCache, data.toolCallNameCache);
@@ -147,7 +155,7 @@ export function loadThoughtSignatureCacheFromDisk(): void {
       isLoading = false;
     }
   } catch (err) {
-    logger.warn('Failed to load thought signature cache from disk:', err);
+    logger.warn("Failed to load thought signature cache from disk:", err);
   }
 }
 
@@ -172,7 +180,7 @@ export function flushThoughtSignatureCache(): void {
       lastThoughtSignatureByTool: Object.fromEntries(lastThoughtSignatureByTool.entries()),
       toolCallNameCache: Object.fromEntries(toolCallNameCache.entries()),
     };
-    fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), 'utf-8');
+    fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), "utf-8");
     fs.renameSync(tempPath, filePath);
     isDirty = false;
   } catch (err) {
@@ -183,7 +191,7 @@ export function flushThoughtSignatureCache(): void {
     } catch {
       // Ignore cleanup error
     }
-    logger.warn('Failed to save thought signature cache to disk:', err);
+    logger.warn("Failed to save thought signature cache to disk:", err);
   }
 }
 
@@ -207,13 +215,13 @@ export function clearThoughtSignatureCache(): void {
 }
 
 // Hook into process exit to flush any unwritten cache data
-if (typeof process !== 'undefined' && typeof process.on === 'function') {
-  process.on('beforeExit', () => {
+if (typeof process !== "undefined" && typeof process.on === "function") {
+  process.on("beforeExit", () => {
     if (isDirty) {
       flushThoughtSignatureCache();
     }
   });
-  process.on('exit', () => {
+  process.on("exit", () => {
     if (isDirty) {
       flushThoughtSignatureCache();
     }

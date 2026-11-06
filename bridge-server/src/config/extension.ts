@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 
-export const EXTENSIONS_DIRECTORY_NAME = path.join('.gemini', 'extensions');
-export const EXTENSIONS_CONFIG_FILENAME = 'gemini-extension.json';
+export const EXTENSIONS_DIRECTORY_NAME = path.join(".gemini", "extensions");
+export const EXTENSIONS_CONFIG_FILENAME = "gemini-extension.json";
 
 export interface Extension {
   config: ExtensionConfig;
@@ -63,9 +63,7 @@ function loadExtensionsFromDir(dir: string): Extension[] {
 
 function loadExtension(extensionDir: string): Extension | null {
   if (!fs.statSync(extensionDir).isDirectory()) {
-    console.error(
-      `Warning: unexpected file ${extensionDir} in extensions directory.`,
-    );
+    console.error(`Warning: unexpected file ${extensionDir} in extensions directory.`);
     return null;
   }
 
@@ -78,12 +76,10 @@ function loadExtension(extensionDir: string): Extension | null {
   }
 
   try {
-    const configContent = fs.readFileSync(configFilePath, 'utf-8');
+    const configContent = fs.readFileSync(configFilePath, "utf-8");
     const config = JSON.parse(configContent) as ExtensionConfig;
     if (!config.name || !config.version) {
-      console.error(
-        `Invalid extension config in ${configFilePath}: missing name or version.`,
-      );
+      console.error(`Invalid extension config in ${configFilePath}: missing name or version.`);
       return null;
     }
 
@@ -96,16 +92,14 @@ function loadExtension(extensionDir: string): Extension | null {
       contextFiles,
     };
   } catch (e) {
-    console.error(
-      `Warning: error parsing extension config in ${configFilePath}: ${e}`,
-    );
+    console.error(`Warning: error parsing extension config in ${configFilePath}: ${e}`);
     return null;
   }
 }
 
 function getContextFileNames(config: ExtensionConfig): string[] {
   if (!config.contextFileName) {
-    return ['GEMINI.md'];
+    return ["GEMINI.md"];
   } else if (!Array.isArray(config.contextFileName)) {
     return [config.contextFileName];
   }

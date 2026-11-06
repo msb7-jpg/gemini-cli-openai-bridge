@@ -4,25 +4,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { homedir } from 'os';
+import * as fs from "fs";
+import * as path from "path";
+import { homedir } from "os";
 import {
   getErrorMessage,
   BugCommandSettings,
   TelemetrySettings,
   AuthType,
-} from '@google/gemini-cli-core';
-import stripJsonComments from 'strip-json-comments';
-import { type SecurityPolicy } from '../types.js';
+} from "@google/gemini-cli-core";
+import stripJsonComments from "strip-json-comments";
+import { type SecurityPolicy } from "../types.js";
 
-export const SETTINGS_DIRECTORY_NAME = '.gemini';
+export const SETTINGS_DIRECTORY_NAME = ".gemini";
 export const USER_SETTINGS_DIR = path.join(homedir(), SETTINGS_DIRECTORY_NAME);
-export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, 'settings.json');
+export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, "settings.json");
 
 export enum SettingScope {
-  User = 'User',
-  Workspace = 'Workspace',
+  User = "User",
+  Workspace = "Workspace",
 }
 
 export interface CheckpointingSettings {
@@ -75,11 +75,7 @@ export interface SettingsFile {
   path: string;
 }
 export class LoadedSettings {
-  constructor(
-    user: SettingsFile,
-    workspace: SettingsFile,
-    errors: SettingsError[],
-  ) {
+  constructor(user: SettingsFile, workspace: SettingsFile, errors: SettingsError[]) {
     this.user = user;
     this.workspace = workspace;
     this.errors = errors;
@@ -114,11 +110,7 @@ export class LoadedSettings {
     }
   }
 
-  setValue(
-    scope: SettingScope,
-    key: keyof Settings,
-    value: any,
-  ): void {
+  setValue<Key extends keyof Settings>(scope: SettingScope, key: Key, value: Settings[Key]): void {
     const settingsFile = this.forScope(scope);
     settingsFile.settings[key] = value;
     this._merged = this.computeMergedSettings();
@@ -130,33 +122,28 @@ function resolveEnvVarsInString(value: string): string {
   const envVarRegex = /\$(?:(\w+)|{([^}]+)})/g; // Find $VAR_NAME or ${VAR_NAME}
   return value.replace(envVarRegex, (match, varName1, varName2) => {
     const varName = varName1 || varName2;
-    if (process && process.env && typeof process.env[varName] === 'string') {
+    if (process && process.env && typeof process.env[varName] === "string") {
       return process.env[varName]!;
     }
     return match;
   });
 }
 
-function resolveEnvVarsInObject<T>(obj: T): T {
-  if (
-    obj === null ||
-    obj === undefined ||
-    typeof obj === 'boolean' ||
-    typeof obj === 'number'
-  ) {
+function resolveEnvVarsInObject<TValue>(obj: TValue): TValue {
+  if (obj === null || obj === undefined || typeof obj === "boolean" || typeof obj === "number") {
     return obj;
   }
 
-  if (typeof obj === 'string') {
-    return resolveEnvVarsInString(obj) as unknown as T;
+  if (typeof obj === "string") {
+    return resolveEnvVarsInString(obj) as unknown as TValue;
   }
 
   if (Array.isArray(obj)) {
-    return obj.map((item) => resolveEnvVarsInObject(item)) as unknown as T;
+    return obj.map((item) => resolveEnvVarsInObject(item)) as unknown as TValue;
   }
 
-  if (typeof obj === 'object') {
-    const newObj = { ...obj } as T;
+  if (typeof obj === "object") {
+    const newObj = { ...obj } as TValue;
     for (const key in newObj) {
       if (Object.prototype.hasOwnProperty.call(newObj, key)) {
         newObj[key] = resolveEnvVarsInObject(newObj[key]);
@@ -171,6 +158,8 @@ function resolveEnvVarsInObject<T>(obj: T): T {
 /**
  * Loads settings from user and workspace directories.
  * Project settings override user settings.
+ * @param workspaceDir - The workspace directory to load settings from.
+ * @returns The loaded settings instance.
  */
 export function loadSettings(workspaceDir: string): LoadedSettings {
   let userSettings: Settings = {};
@@ -180,10 +169,8 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
   // Load user settings
   try {
     if (fs.existsSync(USER_SETTINGS_PATH)) {
-      const userContent = fs.readFileSync(USER_SETTINGS_PATH, 'utf-8');
-      const parsedUserSettings = JSON.parse(
-        stripJsonComments(userContent),
-      ) as Settings;
+      const userContent = fs.readFileSync(USER_SETTINGS_PATH, "utf-8");
+      const parsedUserSettings = JSON.parse(stripJsonComments(userContent)) as Settings;
       userSettings = resolveEnvVarsInObject(parsedUserSettings);
     }
   } catch (error: unknown) {
@@ -193,19 +180,13 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
     });
   }
 
-  const workspaceSettingsPath = path.join(
-    workspaceDir,
-    SETTINGS_DIRECTORY_NAME,
-    'settings.json',
-  );
+  const workspaceSettingsPath = path.join(workspaceDir, SETTINGS_DIRECTORY_NAME, "settings.json");
 
   // Load workspace settings
   try {
     if (fs.existsSync(workspaceSettingsPath)) {
-      const projectContent = fs.readFileSync(workspaceSettingsPath, 'utf-8');
-      const parsedWorkspaceSettings = JSON.parse(
-        stripJsonComments(projectContent),
-      ) as Settings;
+      const projectContent = fs.readFileSync(workspaceSettingsPath, "utf-8");
+      const parsedWorkspaceSettings = JSON.parse(stripJsonComments(projectContent)) as Settings;
       workspaceSettings = resolveEnvVarsInObject(parsedWorkspaceSettings);
     }
   } catch (error: unknown) {
@@ -228,6 +209,10 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
   );
 }
 
+/**
+ * Saves settings to disk for a given settings file.
+ * @param settingsFile - The settings file to save.
+ */
 export function saveSettings(settingsFile: SettingsFile): void {
   try {
     // Ensure the directory exists
@@ -236,12 +221,8 @@ export function saveSettings(settingsFile: SettingsFile): void {
       fs.mkdirSync(dirPath, { recursive: true });
     }
 
-    fs.writeFileSync(
-      settingsFile.path,
-      JSON.stringify(settingsFile.settings, null, 2),
-      'utf-8',
-    );
+    fs.writeFileSync(settingsFile.path, JSON.stringify(settingsFile.settings, null, 2), "utf-8");
   } catch (error) {
-    console.error('Error saving user settings file:', error);
+    console.error("Error saving user settings file:", error);
   }
 }

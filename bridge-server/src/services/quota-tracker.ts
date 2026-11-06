@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { remoteQuotaClient, type RemoteModelQuota } from './remote-quota-client.js';
+import { remoteQuotaClient, type RemoteModelQuota } from "./remote-quota-client.js";
 
 export interface TokenUsage {
   promptTokens: number;
@@ -25,7 +25,7 @@ export interface QuotaWindowStats {
 }
 
 export interface QuotaSnapshot {
-  status: 'healthy' | 'pro_quota_exceeded' | 'rate_limited';
+  status: "healthy" | "pro_quota_exceeded" | "rate_limited";
   authType: string;
   uptimeSeconds: number;
   requests: {
@@ -46,7 +46,7 @@ export interface QuotaSnapshot {
 
 export class QuotaTracker {
   private startTime: number = Date.now();
-  private authType: string = 'unknown';
+  private authType: string = "unknown";
   private requestTimestamps: number[] = [];
   private totalRequests: number = 0;
 
@@ -69,8 +69,8 @@ export class QuotaTracker {
   private rpdLimit: number = 1000;
 
   constructor(options?: { authType?: string; rpmLimit?: number; rpdLimit?: number }) {
-    this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || '60', 10);
-    this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || '1000', 10);
+    this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || "60", 10);
+    this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || "1000", 10);
 
     if (options?.authType) {
       this.setAuthType(options.authType);
@@ -85,15 +85,15 @@ export class QuotaTracker {
     const lower = authType.toLowerCase();
 
     // Set intelligent defaults based on Gemini CLI docs & auth types
-    if (lower.includes('oauth') || lower.includes('code_assist') || lower.includes('cloud')) {
-      this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || '60', 10);
-      this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || '1000', 10);
-    } else if (lower.includes('api_key') || lower.includes('gemini')) {
-      this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || '15', 10);
-      this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || '1500', 10);
+    if (lower.includes("oauth") || lower.includes("code_assist") || lower.includes("cloud")) {
+      this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || "60", 10);
+      this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || "1000", 10);
+    } else if (lower.includes("api_key") || lower.includes("gemini")) {
+      this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || "15", 10);
+      this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || "1500", 10);
     } else {
-      this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || '60', 10);
-      this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || '1000', 10);
+      this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || "60", 10);
+      this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || "1000", 10);
     }
   }
 
@@ -152,9 +152,9 @@ export class QuotaTracker {
       errorStr.includes("Quota exceeded for quota metric 'Gemini") &&
       errorStr.includes("Pro Requests'");
     const isGeneric =
-      errorStr.includes('Quota exceeded for quota metric') ||
-      errorStr.toLowerCase().includes('resource_exhausted') ||
-      errorStr.includes('429');
+      errorStr.includes("Quota exceeded for quota metric") ||
+      errorStr.toLowerCase().includes("resource_exhausted") ||
+      errorStr.includes("429");
 
     if (isPro) {
       this.proQuotaExceeded = true;
@@ -183,19 +183,19 @@ export class QuotaTracker {
       this.retryUntil = null;
     }
 
-    const rpmUsed = this.requestTimestamps.filter((t) => t >= now - 60_000).length;
-    const rpdUsed = this.requestTimestamps.filter((t) => t >= now - 86_400_000).length;
+    const rpmUsed = this.requestTimestamps.filter((timestamp) => timestamp >= now - 60_000).length;
+    const rpdUsed = this.requestTimestamps.filter(
+      (timestamp) => timestamp >= now - 86_400_000,
+    ).length;
 
     const retryAfterSeconds =
-      this.retryUntil && this.retryUntil > now
-        ? Math.ceil((this.retryUntil - now) / 1000)
-        : 0;
+      this.retryUntil && this.retryUntil > now ? Math.ceil((this.retryUntil - now) / 1000) : 0;
 
-    let status: QuotaSnapshot['status'] = 'healthy';
+    let status: QuotaSnapshot["status"] = "healthy";
     if (this.proQuotaExceeded) {
-      status = 'pro_quota_exceeded';
+      status = "pro_quota_exceeded";
     } else if (this.genericQuotaExceeded || rpmUsed >= this.rpmLimit || rpdUsed >= this.rpdLimit) {
-      status = 'rate_limited';
+      status = "rate_limited";
     }
 
     const byModel: Record<string, ModelUsageStats> = {};
@@ -253,9 +253,9 @@ export class QuotaTracker {
     const snapshot = this.getSnapshot();
     const rpm = snapshot.requests.rpm;
     return {
-      'x-ratelimit-limit-requests': String(rpm.limit),
-      'x-ratelimit-remaining-requests': String(rpm.remaining),
-      'x-ratelimit-reset-requests': String(snapshot.retryAfterSeconds || 60),
+      "x-ratelimit-limit-requests": String(rpm.limit),
+      "x-ratelimit-remaining-requests": String(rpm.remaining),
+      "x-ratelimit-reset-requests": String(snapshot.retryAfterSeconds || 60),
     };
   }
 
@@ -267,15 +267,17 @@ export class QuotaTracker {
   }
 
   private extractErrorMessage(error: unknown): string {
-    if (!error) return 'Unknown error';
-    if (typeof error === 'string') return error;
+    if (!error) return "Unknown error";
+    if (typeof error === "string") return error;
     if (error instanceof Error) return error.message;
 
-    const anyErr = error as any;
+    const anyErr = error as { response?: { data?: unknown }; message?: unknown };
     if (anyErr?.response?.data) {
-      const data = anyErr.response.data;
-      if (typeof data === 'string') return data;
-      if (data.error?.message) return String(data.error.message);
+      const data = anyErr.response.data as { error?: { message?: unknown } } | string;
+      if (typeof data === "string") return data;
+      if (typeof data === "object" && data !== null && data.error?.message) {
+        return String(data.error.message);
+      }
       try {
         return JSON.stringify(data);
       } catch {
@@ -291,10 +293,13 @@ export class QuotaTracker {
   }
 
   private extractRetryAfterSeconds(error: unknown, errorStr: string): number {
-    const anyErr = error as any;
+    const anyErr = error as {
+      response?: {
+        headers?: Record<string, unknown> & { get?: (header: string) => unknown };
+      };
+    };
     const retryHeader =
-      anyErr?.response?.headers?.['retry-after'] ||
-      anyErr?.response?.headers?.get?.('retry-after');
+      anyErr?.response?.headers?.["retry-after"] || anyErr?.response?.headers?.get?.("retry-after");
 
     if (retryHeader) {
       const parsedSeconds = parseInt(String(retryHeader), 10);

@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import os from 'node:os';
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 
 export interface RemoteModelQuota {
   modelId: string;
   name?: string;
-  tier?: 'Flash' | 'Flash Lite' | 'Pro' | string;
+  tier?: "Flash" | "Flash Lite" | "Pro" | string;
   tokenType: string;
   remainingFraction: number;
   remainingPercentage: number;
@@ -36,21 +36,21 @@ export interface RemoteQuotaResponse {
 export function formatResetTime(resetTimeIso: string): string {
   try {
     const resetDate = new Date(resetTimeIso);
-    if (isNaN(resetDate.getTime())) return '';
+    if (isNaN(resetDate.getTime())) return "";
     const diffMs = resetDate.getTime() - Date.now();
-    if (diffMs <= 0) return 'now';
+    if (diffMs <= 0) return "now";
 
     const totalMinutes = Math.ceil(diffMs / (1000 * 60));
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
 
-    const hoursStr = hours > 0 ? `${hours}h` : '';
-    const minutesStr = minutes > 0 ? `${minutes}m` : '';
+    const hoursStr = hours > 0 ? `${hours}h` : "";
+    const minutesStr = minutes > 0 ? `${minutes}m` : "";
     const duration = hoursStr && minutesStr ? `${hoursStr} ${minutesStr}` : hoursStr || minutesStr;
 
-    const timeStr = new Intl.DateTimeFormat('en-US', {
-      hour: 'numeric',
-      minute: 'numeric',
+    const timeStr = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "numeric",
     }).format(resetDate);
 
     return duration ? `${timeStr} (${duration})` : timeStr;
@@ -59,15 +59,15 @@ export function formatResetTime(resetTimeIso: string): string {
   }
 }
 
-export function getModelTier(modelId: string): 'Flash Lite' | 'Flash' | 'Pro' {
+export function getModelTier(modelId: string): "Flash Lite" | "Flash" | "Pro" {
   const lower = modelId.toLowerCase();
-  if (lower.includes('flash-lite') || lower.includes('flash_lite')) {
-    return 'Flash Lite';
+  if (lower.includes("flash-lite") || lower.includes("flash_lite")) {
+    return "Flash Lite";
   }
-  if (lower.includes('flash')) {
-    return 'Flash';
+  if (lower.includes("flash")) {
+    return "Flash";
   }
-  return 'Pro';
+  return "Pro";
 }
 
 export class RemoteQuotaClient {
@@ -91,11 +91,11 @@ export class RemoteQuotaClient {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch('https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota', {
-        method: 'POST',
+      const res = await fetch("https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota", {
+        method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(projectId ? { project: projectId } : {}),
         signal: controller.signal,
@@ -128,7 +128,7 @@ export class RemoteQuotaClient {
 
         if (bucket.remainingAmount !== undefined) {
           remainingAmount =
-            typeof bucket.remainingAmount === 'number'
+            typeof bucket.remainingAmount === "number"
               ? bucket.remainingAmount
               : parseInt(bucket.remainingAmount, 10);
           if (fraction > 0 && !isNaN(remainingAmount)) {
@@ -139,7 +139,7 @@ export class RemoteQuotaClient {
         rawItems.push({
           modelId: bucket.modelId,
           tier,
-          tokenType: bucket.tokenType || 'REQUESTS',
+          tokenType: bucket.tokenType || "REQUESTS",
           remainingFraction: fraction,
           remainingPercentage,
           usedPercentage,
@@ -151,13 +151,16 @@ export class RemoteQuotaClient {
       }
 
       // Group by Tier (like Gemini CLI ModelQuotaDisplay)
-      const tierMap = new Map<string, { tier: string; remainingFraction: number; resetTime?: string; models: string[] }>();
+      const tierMap = new Map<
+        string,
+        { tier: string; remainingFraction: number; resetTime?: string; models: string[] }
+      >();
       for (const item of rawItems) {
-        const t = item.tier || 'Flash';
-        const existing = tierMap.get(t);
+        const tierName = item.tier || "Flash";
+        const existing = tierMap.get(tierName);
         if (!existing) {
-          tierMap.set(t, {
-            tier: t,
+          tierMap.set(tierName, {
+            tier: tierName,
             remainingFraction: item.remainingFraction,
             resetTime: item.resetTime,
             models: [item.modelId],
@@ -174,16 +177,16 @@ export class RemoteQuotaClient {
       }
 
       const tierSummaryItems: RemoteModelQuota[] = [];
-      const tierOrder = ['Flash', 'Flash Lite', 'Pro'];
-      for (const t of tierOrder) {
-        const group = tierMap.get(t);
+      const tierOrder = ["Flash", "Flash Lite", "Pro"];
+      for (const tierName of tierOrder) {
+        const group = tierMap.get(tierName);
         if (group) {
           const usedPct = Math.round((1 - group.remainingFraction) * 100);
           tierSummaryItems.push({
-            modelId: t.toLowerCase().replace(/\s+/g, '-'),
-            name: t,
-            tier: t,
-            tokenType: 'REQUESTS',
+            modelId: tierName.toLowerCase().replace(/\s+/g, "-"),
+            name: tierName,
+            tier: tierName,
+            tokenType: "REQUESTS",
             remainingFraction: group.remainingFraction,
             remainingPercentage: 100 - usedPct,
             usedPercentage: usedPct,
@@ -209,9 +212,9 @@ export class RemoteQuotaClient {
 
     // Check ~/.zshrc or ~/.bashrc
     try {
-      const zshrcPath = path.join(os.homedir(), '.zshrc');
+      const zshrcPath = path.join(os.homedir(), ".zshrc");
       if (fs.existsSync(zshrcPath)) {
-        const content = fs.readFileSync(zshrcPath, 'utf-8');
+        const content = fs.readFileSync(zshrcPath, "utf-8");
         const match = content.match(/export\s+GOOGLE_CLOUD_PROJECT=["']?([a-zA-Z0-9-_]+)["']?/);
         if (match && match[1]) return match[1];
       }
@@ -221,12 +224,12 @@ export class RemoteQuotaClient {
 
     // Default to moto-gemini-assist if user belongs to Motorola
     try {
-      const accountsPath = path.join(os.homedir(), '.gemini', 'google_accounts.json');
+      const accountsPath = path.join(os.homedir(), ".gemini", "google_accounts.json");
       if (fs.existsSync(accountsPath)) {
-        const raw = fs.readFileSync(accountsPath, 'utf-8');
+        const raw = fs.readFileSync(accountsPath, "utf-8");
         const accounts = JSON.parse(raw);
-        if (accounts.active && accounts.active.includes('motorola.com')) {
-          return 'moto-gemini-assist';
+        if (accounts.active && accounts.active.includes("motorola.com")) {
+          return "moto-gemini-assist";
         }
       }
     } catch {
@@ -237,12 +240,12 @@ export class RemoteQuotaClient {
   }
 
   private async getOAuthAccessToken(): Promise<string | null> {
-    const credsPath = path.join(os.homedir(), '.gemini', 'oauth_creds.json');
+    const credsPath = path.join(os.homedir(), ".gemini", "oauth_creds.json");
     try {
       if (!fs.existsSync(credsPath)) return null;
-      const raw = fs.readFileSync(credsPath, 'utf-8');
+      const raw = fs.readFileSync(credsPath, "utf-8");
       const creds = JSON.parse(raw);
-      if (creds && typeof creds.access_token === 'string') {
+      if (creds && typeof creds.access_token === "string") {
         return creds.access_token;
       }
     } catch {

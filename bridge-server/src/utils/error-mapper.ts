@@ -1,4 +1,4 @@
-import { type OpenAIError, type OpenAIErrorResponse } from '../types.js';
+import { type OpenAIError, type OpenAIErrorResponse } from "../types.js";
 
 /**
  * Maps a caught error from the Gemini API or auth flow to a standard
@@ -10,49 +10,41 @@ export function mapErrorToOpenAIError(error: unknown): {
   openAIError: OpenAIErrorResponse;
   statusCode: number;
 } {
-  let message = 'An unknown error occurred.';
-  let type: OpenAIError['type'] = 'server_error';
-  let code: string | null = 'internal_error';
+  let message = "An unknown error occurred.";
+  let type: OpenAIError["type"] = "server_error";
+  let code: string | null = "internal_error";
   let statusCode = 500;
 
   if (error instanceof Error) {
     message = error.message;
 
     // Check for specific error messages to determine a more accurate error code.
-    if (message.includes('Authentication failed')) {
+    if (message.includes("Authentication failed")) {
       statusCode = 401;
-      type = 'authentication_error';
-      code = 'invalid_api_key';
-      message =
-        'Invalid authentication credentials. Please check your GCP_SERVICE_ACCOUNT.';
-    } else if (
-      message.includes('429') ||
-      message.toLowerCase().includes('quota')
-    ) {
+      type = "authentication_error";
+      code = "invalid_api_key";
+      message = "Invalid authentication credentials. Please check your GCP_SERVICE_ACCOUNT.";
+    } else if (message.includes("429") || message.toLowerCase().includes("quota")) {
       statusCode = 429;
-      type = 'server_error';
-      code = 'rate_limit_exceeded';
-      message =
-        'You exceeded your current quota, please check your plan and billing details.';
+      type = "server_error";
+      code = "rate_limit_exceeded";
+      message = "You exceeded your current quota, please check your plan and billing details.";
     } else if (
-      message.includes('404') ||
-      message.includes('notFound') ||
-      message.includes('NOT_FOUND')
+      message.includes("404") ||
+      message.includes("notFound") ||
+      message.includes("NOT_FOUND")
     ) {
       statusCode = 404;
-      type = 'invalid_request_error';
-      code = 'model_not_found';
-    } else if (
-      message.includes('400') ||
-      message.toLowerCase().includes('invalid')
-    ) {
+      type = "invalid_request_error";
+      code = "model_not_found";
+    } else if (message.includes("400") || message.toLowerCase().includes("invalid")) {
       statusCode = 400;
-      type = 'invalid_request_error';
-      code = 'invalid_request';
-    } else if (message.includes('500')) {
+      type = "invalid_request_error";
+      code = "invalid_request";
+    } else if (message.includes("500")) {
       statusCode = 500;
-      type = 'server_error';
-      code = 'server_error';
+      type = "server_error";
+      code = "server_error";
     }
     // More Gemini-specific error mappings can be added here if needed.
   }

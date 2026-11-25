@@ -28,6 +28,7 @@ const green = (text: string) => `\x1b[32m${text}\x1b[0m`;
 const yellow = (text: string) => `\x1b[33m${text}\x1b[0m`;
 const red = (text: string) => `\x1b[31m${text}\x1b[0m`;
 const bold = (text: string) => `\x1b[1m${text}\x1b[0m`;
+const dim = (text: string) => `\x1b[2m${text}\x1b[0m`;
 
 interface BridgeCliArguments {
   host: string;
@@ -300,13 +301,6 @@ export async function startBridgeServer(): Promise<void> {
 
   const app = await createServer(config, debugMode, cliVersion);
 
-  writePidFile({
-    pid: process.pid,
-    port,
-    host,
-    startTime: Date.now(),
-  });
-
   const cleanup = async () => {
     try {
       await app.close();
@@ -321,6 +315,14 @@ export async function startBridgeServer(): Promise<void> {
 
   try {
     await app.listen({ port, host });
+
+    writePidFile({
+      pid: process.pid,
+      port,
+      host,
+      startTime: Date.now(),
+    });
+
     logger.info(`Gemini CLI Bridge running:`, {
       host,
       port,
@@ -330,8 +332,20 @@ export async function startBridgeServer(): Promise<void> {
       quota: `http://${host}:${port}/v1/quota`,
     });
   } catch (err) {
-    logger.error("Failed to start server:", err);
-    removePidFile();
+    const errorWithCode = err as { code?: string };
+    if (errorWithCode.code === "EADDRINUSE") {
+      console.error(
+        red(`Failed to start server: Port ${port} is already in use (${host}:${port}).`),
+      );
+      console.error(
+        dim(
+          `Gemini Bridge may already be running. Use '${bold("gemini-bridge status")}' to inspect, or '${bold("gemini-bridge stop")}' to terminate.`,
+        ),
+      );
+    } else {
+      logger.error("Failed to start server:", err);
+      removePidFile();
+    }
     process.exit(1);
   }
 }

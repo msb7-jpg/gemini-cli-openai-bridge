@@ -5,20 +5,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { fileURLToPath } from "url";
-import {
-  handleStatus,
-  handleStop,
-  startDaemon,
-  removePidFile,
-} from "./features/daemon-cli/process-manager.js";
+import { handleStatus, handleStop, startDaemon } from "./features/daemon-cli/process-manager.js";
 import { handleQuota } from "./features/daemon-cli/quota-dashboard.view.js";
 import { handleLogs } from "./features/daemon-cli/log-tailer.js";
+import { validateCliCommand } from "./features/daemon-cli/command-validator.js";
 
 const __filename = fileURLToPath(import.meta.url);
 
 async function main() {
   const rawArgs = process.argv.slice(2);
   const firstArg = rawArgs[0];
+
+  const validation = validateCliCommand(rawArgs);
+  if (!validation.isValid) {
+    console.error(`\x1b[31mError: Unknown command "${validation.command}".\x1b[0m`);
+    if (validation.suggestion) {
+      console.error(`\x1b[33mDid you mean "${validation.suggestion}"?\x1b[0m`);
+    }
+    console.error(`\x1b[2mAvailable commands: start, stop, restart, status, quota, logs\x1b[0m`);
+    process.exit(1);
+  }
 
   const resolvePort = () => {
     const portArg = rawArgs.find((arg) => arg.startsWith("--port=") || arg.startsWith("-p="));
@@ -87,8 +93,10 @@ async function main() {
     rawArgs.includes("-f") ||
     rawArgs.includes("--server-process");
 
+  const forwardedArgs = rawArgs.filter((arg) => arg !== "start");
+
   if (!isForeground) {
-    await startDaemon(resolvePort(), resolveHost(), rawArgs, __filename);
+    await startDaemon(resolvePort(), resolveHost(), forwardedArgs, __filename);
     process.exit(0);
   }
 
@@ -98,6 +106,5 @@ async function main() {
 
 main().catch(async (error) => {
   console.error("Failed to run Gemini CLI Bridge:", error);
-  removePidFile();
   process.exit(1);
 });

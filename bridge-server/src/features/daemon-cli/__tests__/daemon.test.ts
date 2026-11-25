@@ -16,6 +16,11 @@ import {
   isPidRunning,
 } from "../process-manager.js";
 import { checkBridgeHealth } from "../health-poller.js";
+import {
+  computeLevenshteinDistance,
+  findClosestCommand,
+  validateCliCommand,
+} from "../command-validator.js";
 
 describe("daemon-cli slice utils", () => {
   describe("formatUptime", () => {
@@ -137,6 +142,94 @@ describe("daemon-cli slice utils", () => {
 
       const result = await checkBridgeHealth(8765, "127.0.0.1", 500);
       expect(result).toEqual({ ok: false });
+    });
+  });
+
+  describe("command-validator", () => {
+    describe("computeLevenshteinDistance", () => {
+      it("computes exact match as 0", () => {
+        expect(computeLevenshteinDistance("logs", "logs")).toBe(0);
+      });
+
+      it("computes single insertion/deletion as 1", () => {
+        expect(computeLevenshteinDistance("log", "logs")).toBe(1);
+        expect(computeLevenshteinDistance("logs", "log")).toBe(1);
+      });
+
+      it("computes single substitution as 1", () => {
+        expect(computeLevenshteinDistance("lags", "logs")).toBe(1);
+      });
+
+      it("computes transposition edit distance as 2", () => {
+        expect(computeLevenshteinDistance("lgos", "logs")).toBe(2);
+      });
+    });
+
+    describe("findClosestCommand", () => {
+      it("identifies typo 'lgos' as 'logs'", () => {
+        expect(findClosestCommand("lgos")).toBe("logs");
+      });
+
+      it("identifies typo 'satrt' as 'start'", () => {
+        expect(findClosestCommand("satrt")).toBe("start");
+      });
+
+      it("identifies typo 'stopp' as 'stop'", () => {
+        expect(findClosestCommand("stopp")).toBe("stop");
+      });
+
+      it("returns undefined when distance exceeds threshold", () => {
+        expect(findClosestCommand("completely-unrelated-command")).toBeUndefined();
+      });
+    });
+
+    describe("validateCliCommand", () => {
+      it("allows empty arguments", () => {
+        const result = validateCliCommand([]);
+        expect(result.isValid).toBe(true);
+      });
+
+      it("allows flags and options as first argument", () => {
+        expect(validateCliCommand(["--port=9000"]).isValid).toBe(true);
+        expect(validateCliCommand(["-f"]).isValid).toBe(true);
+        expect(validateCliCommand(["--foreground"]).isValid).toBe(true);
+        expect(validateCliCommand(["--help"]).isValid).toBe(true);
+      });
+
+      it("allows all supported known commands", () => {
+        const validCommands = [
+          "start",
+          "status",
+          "quota",
+          "usage",
+          "stop",
+          "restart",
+          "logs",
+          "help",
+          "version",
+        ];
+        for (const cmd of validCommands) {
+          const result = validateCliCommand([cmd]);
+          expect(result.isValid).toBe(true);
+          expect(result.command).toBe(cmd);
+        }
+      });
+
+      it("rejects misspelled commands like 'lgos' and suggests the correction", () => {
+        const result = validateCliCommand(["lgos", "-f"]);
+        expect(result.isValid).toBe(false);
+        expect(result.command).toBe("lgos");
+        expect(result.suggestion).toBe("logs");
+        expect(result.error).toContain('Did you mean "logs"?');
+      });
+
+      it("rejects unknown commands without suggestion when no close match exists", () => {
+        const result = validateCliCommand(["foobarbaz"]);
+        expect(result.isValid).toBe(false);
+        expect(result.command).toBe("foobarbaz");
+        expect(result.suggestion).toBeUndefined();
+        expect(result.error).toBe('Unknown command: "foobarbaz".');
+      });
     });
   });
 });

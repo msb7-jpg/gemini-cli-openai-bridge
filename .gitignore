@@ -40,3 +40,4 @@ packages/cli/src/generated/
 
 # by @Intelligent-Internet
 .history
+.omo/

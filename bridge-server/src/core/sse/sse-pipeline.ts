@@ -41,6 +41,13 @@ export async function pipeCanonicalStreamToSSE(
   canonicalStream: AsyncGenerator<CanonicalStreamEvent>,
   encoder: ProtocolSSEEncoder,
 ): Promise<void> {
+  const existingHeaders = reply.getHeaders();
+  for (const [key, value] of Object.entries(existingHeaders)) {
+    if (value !== undefined) {
+      reply.raw.setHeader(key, value);
+    }
+  }
+
   reply.raw.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",

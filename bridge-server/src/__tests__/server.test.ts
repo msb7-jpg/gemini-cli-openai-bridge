@@ -63,7 +63,7 @@ describe("Fastify Server Integration Tests", () => {
     expect(body).toHaveProperty("tokens");
   });
 
-  it("GET /v1/models returns 200 with model list", async () => {
+  it("GET /v1/models returns 200 with model list including adaptive-gemini", async () => {
     const res = await app.inject({
       method: "GET",
       url: "/v1/models",
@@ -73,6 +73,11 @@ describe("Fastify Server Integration Tests", () => {
     const body = JSON.parse(res.payload);
     expect(body.object).toBe("list");
     expect(Array.isArray(body.data)).toBe(true);
+    const adaptiveModel = body.data.find(
+      (modelCard: { id: string }) => modelCard.id === "adaptive-gemini",
+    );
+    expect(adaptiveModel).toBeDefined();
+    expect(adaptiveModel.display_name).toBe("Adaptive Gemini");
   });
 
   it("POST /v1/chat/completions rejects invalid schema with 400", async () => {

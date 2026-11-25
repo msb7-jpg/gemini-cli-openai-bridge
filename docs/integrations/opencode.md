@@ -52,6 +52,19 @@ npm link
 ### Step 3: Configure OpenCode (`~/.config/opencode/opencode.json`)
 Read the user's existing `~/.config/opencode/opencode.json` (or create it if missing).
 
+#### Context Window & Output Limits
+
+Google Gemini models offer massive context windows. To ensure OpenCode leverages the full window, always specify context and output limits:
+
+| Model Family | Models | Context Window (Tokens) | Max Output (Tokens) |
+| :--- | :--- | :--- | :--- |
+| **Adaptive Virtual Model** | `adaptive-gemini` (Auto: Flash Lite / Flash 3.8 / Pro 3.1) | **1,048,576** (1M) | **65,536** (64k) |
+| **Flash Models** | `gemini-3.8-flash`, `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-3-flash-preview` | **1,048,576** (1M) | **65,536** (64k) |
+| **Pro Models** | `gemini-2.5-pro`, `gemini-3.1-pro-preview`, `gemini-3-pro-preview` | **2,097,152** (2M) | **65,536** (64k) |
+
+> ⚠️ **Important Callout: OpenCode 200k Token Fallback**  
+> OpenCode defaults custom OpenAI-compatible models to **200,000 context tokens** if no `limit` is specified in `opencode.json`. This can cause agent sessions to prematurely truncate context, summarize prematurely, or throw out-of-context errors during long workflows. Explicitly setting `limit: { "context": ..., "output": 65536 }` is required in both Modern and Classic format configurations.
+
 You can configure OpenCode using either the modern `providers` format (recommended for forward compatibility) or the classic `provider` format with `options`.
 
 #### Modern Format (`providers` — Recommended):
@@ -69,52 +82,104 @@ You can configure OpenCode using either the modern `providers` format (recommend
         "Authorization": "Bearer local-bridge"
       },
       "models": {
+        "adaptive-gemini": {
+          "name": "Adaptive Gemini (Autonomous Router)",
+          "capabilities": {
+            "tools": true
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
         "gemini-3.8-flash": {
           "name": "Gemini 3.8 Flash (Thinking)",
           "capabilities": {
             "tools": true
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 65536
           }
         },
         "gemini-3.5-flash": {
           "name": "Gemini 3.5 Flash",
           "capabilities": {
             "tools": true
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 65536
           }
         },
         "gemini-3.1-flash-lite": {
           "name": "Gemini 3.1 Flash Lite",
           "capabilities": {
             "tools": true
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 65536
           }
         },
         "gemini-2.5-pro": {
           "name": "Gemini 2.5 Pro (Deep Reasoning)",
           "capabilities": {
             "tools": true
+          },
+          "limit": {
+            "context": 2097152,
+            "output": 65536
           }
         },
         "gemini-2.5-flash": {
           "name": "Gemini 2.5 Flash",
           "capabilities": {
             "tools": true
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 65536
           }
         },
         "gemini-2.5-flash-lite": {
           "name": "Gemini 2.5 Flash Lite",
           "capabilities": {
             "tools": true
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 65536
           }
         },
         "gemini-3-flash-preview": {
           "name": "Gemini 3 Flash Preview",
           "capabilities": {
             "tools": true
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 65536
           }
         },
         "gemini-3-pro-preview": {
           "name": "Gemini 3 Pro Preview",
           "capabilities": {
             "tools": true
+          },
+          "limit": {
+            "context": 2097152,
+            "output": 65536
+          }
+        },
+        "gemini-3.1-pro-preview": {
+          "name": "Gemini 3.1 Pro Preview",
+          "capabilities": {
+            "tools": true
+          },
+          "limit": {
+            "context": 2097152,
+            "output": 65536
           }
         }
       }
@@ -166,7 +231,7 @@ Ensure `baseURL` and `apiKey` are wrapped inside the nested `"options"` block:
           "name": "Gemini 2.5 Pro (Deep Reasoning)",
           "tool_call": true,
           "limit": {
-            "context": 1048576,
+            "context": 2097152,
             "output": 65536
           }
         },
@@ -198,7 +263,15 @@ Ensure `baseURL` and `apiKey` are wrapped inside the nested `"options"` block:
           "name": "Gemini 3 Pro Preview",
           "tool_call": true,
           "limit": {
-            "context": 1048576,
+            "context": 2097152,
+            "output": 65536
+          }
+        },
+        "gemini-3.1-pro-preview": {
+          "name": "Gemini 3.1 Pro Preview",
+          "tool_call": true,
+          "limit": {
+            "context": 2097152,
             "output": 65536
           }
         }

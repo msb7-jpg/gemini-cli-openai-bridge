@@ -28,8 +28,8 @@ Open or create `~/.codex/config.toml` and configure the `gemini_bridge` provider
 # Set the default provider to our local bridge
 model_provider = "gemini_bridge"
 
-# Choose your default model
-model = "gemini-3.8-flash"
+# Choose your default model (adaptive-gemini provides autonomous multi-tier routing)
+model = "adaptive-gemini"
 
 # Define the local bridge endpoint
 [model_providers.gemini_bridge]
@@ -38,9 +38,13 @@ base_url = "http://127.0.0.1:8765/v1"
 wire_api = "responses"
 ```
 
-## 3. Create Profiles for Easy Model Switching (Optional)
+## 3. Autonomous Routing or Manual Profiles
 
-Codex (v0.166.0+) supports configuring runtime profiles through overlay files. This lets you quickly switch between a "fast" model and a "heavy" model for complex reasoning.
+### Option A: Use `adaptive-gemini` (Recommended)
+By leaving `model = "adaptive-gemini"` in `~/.codex/config.toml`, Codex automatically routes file searches and status turns to Gemini 3.1 Flash Lite, coding turns to Gemini 3.8 Flash, and architectural plans to Gemini 3.1 Pro Preview without requiring manual profile switching.
+
+### Option B: Create Profiles for Explicit Model Switching
+Codex (v0.166.0+) also supports configuring runtime profiles through overlay files:
 
 Create a profile for **fast lookups**:
 ```bash
@@ -49,7 +53,7 @@ echo 'model = "gemini-3.1-flash-lite"' > ~/.codex/fast-code.config.toml
 
 Create a profile for **heavy coding tasks**:
 ```bash
-echo 'model = "gemini-3-pro-preview"' > ~/.codex/heavy-coder.config.toml
+echo 'model = "gemini-3.1-pro-preview"' > ~/.codex/heavy-coder.config.toml
 ```
 
 ## 4. Run Codex

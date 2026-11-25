@@ -6,7 +6,7 @@
 ---
 
 ### Goal
-Configure VSCode custom language models (`chatLanguageModels.json`) with all modalities (tool calling, vision, thinking/reasoning effort, editTools, streaming, and 1M context) pointing to `@migueldsbatista/gemini-cli-openai-bridge` so the user can use Google Gemini models directly inside GitHub Copilot Chat in VSCode.
+Configure VSCode custom language models (`chatLanguageModels.json`) with all modalities (tool calling, vision, thinking/reasoning effort, editTools, streaming, and 1M/2M context) pointing to `@migueldsbatista/gemini-cli-openai-bridge` so the user can use Google Gemini models directly inside GitHub Copilot Chat in VSCode.
 
 ---
 
@@ -68,6 +68,19 @@ Determine the OS-specific path for VSCode's `chatLanguageModels.json`:
 {
   "customendpoint": [
     {
+      "model": "adaptive-gemini",
+      "name": "Adaptive Gemini (Autonomous Router)",
+      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
+      "apiKey": "local-bridge",
+      "tools": true,
+      "vision": true,
+      "thinking": true,
+      "editTools": true,
+      "streaming": true,
+      "maxInputTokens": 1048576,
+      "maxOutputTokens": 65536
+    },
+    {
       "model": "gemini-3.8-flash",
       "name": "Gemini 3.8 Flash (Thinking)",
       "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
@@ -90,7 +103,20 @@ Determine the OS-specific path for VSCode's `chatLanguageModels.json`:
       "thinking": true,
       "editTools": true,
       "streaming": true,
-      "maxInputTokens": 1048576,
+      "maxInputTokens": 2097152,
+      "maxOutputTokens": 65536
+    },
+    {
+      "model": "gemini-3.1-pro-preview",
+      "name": "Gemini 3.1 Pro Preview",
+      "endpoint": "http://127.0.0.1:8765/v1/chat/completions",
+      "apiKey": "local-bridge",
+      "tools": true,
+      "vision": true,
+      "thinking": true,
+      "editTools": true,
+      "streaming": true,
+      "maxInputTokens": 2097152,
       "maxOutputTokens": 65536
     },
     {
@@ -103,7 +129,7 @@ Determine the OS-specific path for VSCode's `chatLanguageModels.json`:
       "thinking": true,
       "editTools": true,
       "streaming": true,
-      "maxInputTokens": 1048576,
+      "maxInputTokens": 2097152,
       "maxOutputTokens": 65536
     },
     {

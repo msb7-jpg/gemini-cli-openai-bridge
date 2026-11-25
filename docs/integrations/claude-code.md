@@ -60,17 +60,19 @@ Ensure `~/.claude/settings.json` contains:
   "env": {
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:8765",
     "ANTHROPIC_AUTH_TOKEN": "local",
-    "ANTHROPIC_MODEL": "gemini-3.8-flash"
+    "ANTHROPIC_MODEL": "adaptive-gemini"
   }
 }
 ```
+> 💡 **Why `adaptive-gemini`?**  
+> Claude Code performs continuous tool-calling turns (`Bash`, `FileRead`, `FileEdit`, `Grep`, `Glob`). When `"ANTHROPIC_MODEL": "adaptive-gemini"` is configured, file reading and exploration turns automatically execute via **Gemini 3.1 Flash Lite** (TTFT ~200ms vs ~900ms for Pro), making Claude Code feel noticeably faster while preserving Pro/Flash quota for heavy edits and planning. Alternatively, you can specify `gemini-3.8-flash` or `gemini-2.5-pro` for a static model.
 
 #### Method B: Shell Environment Variables (`~/.zshrc` or `~/.bashrc`)
 Add the following exports:
 ```bash
 export ANTHROPIC_BASE_URL="http://127.0.0.1:8765"
 export ANTHROPIC_AUTH_TOKEN="local"
-export ANTHROPIC_MODEL="gemini-3.8-flash"
+export ANTHROPIC_MODEL="adaptive-gemini"
 ```
 
 ---

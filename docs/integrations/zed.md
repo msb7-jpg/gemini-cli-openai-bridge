@@ -6,7 +6,7 @@
 ---
 
 ### Goal
-Configure Zed Editor custom language models (`settings.json`) with all modalities (thinking/reasoning effort, tool execution, images/vision, parallel tool calls, streaming, and 1M context) pointing to `@migueldsbatista/gemini-cli-openai-bridge` so the user can use Google Gemini models directly inside Zed's Assistant and Agent panels.
+Configure Zed Editor custom language models (`settings.json`) with all modalities (thinking/reasoning effort, tool execution, images/vision, parallel tool calls, streaming, and 1M/2M context) pointing to `@migueldsbatista/gemini-cli-openai-bridge` so the user can use Google Gemini models directly inside Zed's Assistant and Agent panels.
 
 ---
 
@@ -71,6 +71,22 @@ Determine the OS-specific path for Zed's `settings.json`:
         "api_url": "http://127.0.0.1:8765/v1",
         "available_models": [
           {
+            "name": "adaptive-gemini",
+            "display_name": "Adaptive Gemini (Autonomous Router)",
+            "max_tokens": 1048576,
+            "max_output_tokens": 65536,
+            "reasoning_effort": "medium",
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": false,
+              "chat_completions": true,
+              "interleaved_reasoning": false,
+              "max_tokens_parameter": false
+            }
+          },
+          {
             "name": "gemini-3.8-flash",
             "display_name": "Gemini 3.8 Flash (Thinking)",
             "max_tokens": 1048576,
@@ -89,7 +105,7 @@ Determine the OS-specific path for Zed's `settings.json`:
           {
             "name": "gemini-2.5-pro",
             "display_name": "Gemini 2.5 Pro (Deep Reasoning)",
-            "max_tokens": 1048576,
+            "max_tokens": 2097152,
             "max_output_tokens": 65536,
             "reasoning_effort": "high",
             "capabilities": {
@@ -105,7 +121,23 @@ Determine the OS-specific path for Zed's `settings.json`:
           {
             "name": "gemini-3-pro-preview",
             "display_name": "Gemini 3 Pro Preview",
-            "max_tokens": 1048576,
+            "max_tokens": 2097152,
+            "max_output_tokens": 65536,
+            "reasoning_effort": "high",
+            "capabilities": {
+              "tools": true,
+              "images": true,
+              "parallel_tool_calls": true,
+              "prompt_cache_key": false,
+              "chat_completions": true,
+              "interleaved_reasoning": false,
+              "max_tokens_parameter": false
+            }
+          },
+          {
+            "name": "gemini-3.1-pro-preview",
+            "display_name": "Gemini 3.1 Pro Preview",
+            "max_tokens": 2097152,
             "max_output_tokens": 65536,
             "reasoning_effort": "high",
             "capabilities": {
@@ -166,6 +198,10 @@ Determine the OS-specific path for Zed's `settings.json`:
       {
         "provider": "Gemini OpenAI Bridge",
         "model": "gemini-3-pro-preview"
+      },
+      {
+        "provider": "Gemini OpenAI Bridge",
+        "model": "gemini-3.1-pro-preview"
       },
       {
         "provider": "Gemini OpenAI Bridge",

@@ -158,6 +158,6 @@ Allow users to register the bridge as a background service that automatically la
 | Phase | Target | Core Deliverables |
 |---|---|---|
 | **Phase 1: Diagnostics & Aliasing** | v0.6.0 | `gemini-bridge doctor`, model aliasing table, human-readable error translation, clean env-based project ID resolution. |
-| **Phase 2: Adaptive Model Routing** | v0.7.0 | `adaptive-gemini` virtual model across `/v1/chat/completions`, `/v1/messages`, and `/v1/responses`, tier classification, quota-aware fallback. |
+| **Phase 2: Adaptive Model Routing** | v0.7.0 | ✅ Completed: `adaptive-gemini` virtual model across `/v1/chat/completions`, `/v1/messages`, and `/v1/responses`, sub-millisecond heuristic tier classification (<0.01ms), quota-aware fallback. |
 | **Phase 3: Client Wizards & Refresh** | v0.8.0 | `gemini-bridge setup <client>`, proactive background OAuth token renewal, `POST /v1/embeddings`. |
 | **Phase 4: Observability & Services** | v0.9.0 | Embedded Web Dashboard (`/dashboard`), Anthropic PDF support, `gemini-bridge service install`. |

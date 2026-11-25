@@ -36,7 +36,9 @@ It is specifically tailored for AI coding agents and developer workflows such as
 
 ## Features
 
+- **Intelligent `adaptive-gemini` Virtual Model**: Zero-latency (<0.01ms) synchronous heuristic routing engine that autonomously delegates incoming turns to **Gemini 3.1 Flash Lite** (Fast Tier for read-only tools and short queries), **Gemini 3.8 Flash** (Standard Tier for coding and refactoring), or **Gemini 3.1 Pro Preview** (Heavy Tier for architecture and complex reasoning), with automatic quota-aware down-tier fallback on HTTP 429.
 - **OpenAI and Anthropic API Parity**: Serves standard `/v1/chat/completions` alongside full Anthropic `/v1/messages` (SSE streaming and non-streaming) with `/health` and Claude connection probes (`/api/hello`). See [API Compatibility](#api-compatibility) and [Integrations](#integrations).
+- **Massive Context Windows & High Output Limits**: Native support for up to 1,048,576 tokens (1M) for Flash models, 2,097,152 tokens (2M) for Pro models, and up to 65,536 (64k) output tokens per completion.
 - **Thought Signature Preservation**: Seamlessly extracts, caches, and preserves `thought_signature` tokens across multi-turn function calls, enabling Gemini reasoning models (such as Gemini 2.5 Flash/Pro and Gemini 3.8 Flash). See [Integrations](#integrations).
 - **Parallel Tool Calling & Turn Parity**: Bundles OpenAI `role: "tool"` responses into Gemini's single `user` turn constraints, matching parts 1:1 and synthesizing fallback responses if any tool call is omitted.
 - **Exhaustive Schema Sanitization**: Translates modern OpenAPI 3.1 and JSON Schema constructs (`exclusiveMinimum`, `exclusiveMaximum`, `const`, `oneOf`, `$schema`, `additionalProperties`) into strict Gemini Protobuf schemas without HTTP 400 errors.
@@ -52,9 +54,9 @@ It is specifically tailored for AI coding agents and developer workflows such as
 
 | API Specification | Endpoint | Supported Features | Status |
 |---|---|---|---|
-| **OpenAI Chat Completions** | `POST /v1/chat/completions` | SSE streaming, multi-turn tool calling, multimodal vision, reasoning effort | ✓ Supported |
-| **Anthropic Messages** | `POST /v1/messages` | SSE streaming, Claude Code tools (`Bash`, `FileRead`, `FileEdit`), system prompts | ✓ Supported |
-| **Model Discovery** | `GET /v1/models` | OpenAI-compatible model listing and dynamic route discovery | ✓ Supported |
+| **OpenAI Chat Completions** | `POST /v1/chat/completions` | SSE streaming, multi-turn tool calling, multimodal vision, reasoning effort, 1M/2M context | ✓ Supported |
+| **Anthropic Messages** | `POST /v1/messages` | SSE streaming, Claude Code tools (`Bash`, `FileRead`, `FileEdit`), system prompts, 1M/2M context | ✓ Supported |
+| **Model Discovery** | `GET /v1/models` | OpenAI-compatible model listing with 1M (Flash) / 2M (Pro) context metadata | ✓ Supported |
 | **Health & Handshake** | `GET /health`, `GET /api/hello` | Server health status probe and Claude Code connection handshake | ✓ Supported |
 | **Quota & Rate Limits** | `GET /v1/quota`, `GET /v1/usage` | Sliding window RPM/RPD inspection and standard rate limit headers | ✓ Supported |
 
@@ -154,6 +156,7 @@ The bridge seamlessly connects with popular AI coding agents, editors, and devel
 Detailed step-by-step setup guides and prompt templates:
 
 - 🤖 **[OpenCode Setup](./docs/integrations/opencode.md)**: Configuration for `~/.config/opencode/opencode.json` using `@ai-sdk/openai-compatible`.
+  > 💡 **Important Note on OpenCode Context Limits**: OpenCode defaults custom OpenAI-compatible models to **200,000 tokens** if no `limit` object is specified in `opencode.json`. To leverage the full **1M** (1,048,576 for Flash) or **2M** (2,097,152 for Pro) context windows, ensure explicit `limit: { "context": ..., "output": 65536 }` configurations are included as detailed in the setup guide.
 - 🎭 **[Claude Code Setup](./docs/integrations/claude-code.md)**: Configuration for Anthropic Messages API routing via environment variables.
 - 💻 **[VSCode Copilot Chat Setup](./docs/integrations/vscode.md)**: Configuration for `chatLanguageModels.json` custom endpoints.
 - ⚡ **[Zed Editor Setup](./docs/integrations/zed.md)**: Configuration for Zed `settings.json` under `openai_compatible`.

@@ -104,11 +104,18 @@ function renderQuotaDashboard(data: QuotaSnapshot, host: string, port: number): 
 
   const rpd = data.requests?.rpd;
   if (rpd) {
-    const rpdBar = renderProgressBar(rpd.used, rpd.limit, 20);
-    console.log(`  ${bold("Requests Per Day (RPD):")}`);
-    console.log(
-      `    ${rpdBar} ${bold(`${rpd.used}/${rpd.limit}`)} reqs  ${dim(`(${rpd.remaining} remaining today)`)}`,
-    );
+    if (rpd.hasExplicitLimit) {
+      const rpdBar = renderProgressBar(rpd.used, rpd.limit, 20);
+      const resetNote = rpd.resetsIn ? ` (${rpd.resetsIn} until reset)` : "";
+      console.log(`  ${bold("Requests Per Day (RPD):")}`);
+      console.log(
+        `    ${rpdBar} ${bold(`${rpd.used}/${rpd.limit}`)} reqs  ${dim(`(${rpd.remaining} remaining today${resetNote})`)}`,
+      );
+    } else {
+      console.log(`  ${bold("Requests (24h Sliding Window):")}`);
+      const resetInfo = rpd.resetsIn ? `  ${dim(`(Resets: ${rpd.resetsIn})`)}` : "";
+      console.log(`    ${bold(`${rpd.used}`)} reqs${resetInfo}`);
+    }
   }
 
   console.log("");

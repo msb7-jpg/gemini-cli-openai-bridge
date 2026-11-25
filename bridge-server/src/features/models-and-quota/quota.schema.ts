@@ -41,6 +41,9 @@ export const QuotaSnapshotSchema = z.looseObject({
     }),
     rpd: QuotaWindowStatsSchema.extend({
       windowHours: z.number().int().positive(),
+      resetsIn: z.string().optional(),
+      resetTime: z.string().optional(),
+      hasExplicitLimit: z.boolean().optional(),
     }),
   }),
   tokens: TokenUsageSchema,

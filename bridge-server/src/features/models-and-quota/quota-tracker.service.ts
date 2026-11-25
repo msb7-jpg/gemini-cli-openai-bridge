@@ -16,7 +16,7 @@ export interface QuotaSnapshot {
   requests: {
     total: number;
     rpm: QuotaWindowStats & { windowSeconds: number };
-    rpd: QuotaWindowStats & { windowHours: number };
+    rpd: QuotaWindowStats & { windowHours: number; resetsIn?: string; resetTime?: string };
   };
   tokens: TokenUsage;
   byModel: Record<string, ModelUsageStats>;
@@ -55,7 +55,6 @@ export class QuotaTracker {
 
   private rpmLimit: number = 60;
   private rpdLimit: number = 1000;
-
   constructor(options?: { authType?: string; rpmLimit?: number; rpdLimit?: number }) {
     this.rpmLimit = parseInt(process.env.GEMINI_RPM_LIMIT || "60", 10);
     this.rpdLimit = parseInt(process.env.GEMINI_RPD_LIMIT || "1000", 10);
@@ -195,7 +194,7 @@ export class QuotaTracker {
     let status: QuotaSnapshot["status"] = "healthy";
     if (this.proQuotaExceeded) {
       status = "pro_quota_exceeded";
-    } else if (this.genericQuotaExceeded || rpmUsed >= this.rpmLimit || rpdUsed >= this.rpdLimit) {
+    } else if (this.genericQuotaExceeded || rpmUsed >= this.rpmLimit) {
       status = "rate_limited";
     }
 
@@ -224,6 +223,7 @@ export class QuotaTracker {
           limit: this.rpdLimit,
           remaining: Math.max(0, this.rpdLimit - rpdUsed),
           windowHours: 24,
+          hasExplicitLimit: Boolean(process.env.GEMINI_RPD_LIMIT),
         },
       },
       tokens: { ...this.tokens },
@@ -247,6 +247,50 @@ export class QuotaTracker {
       const remote = await remoteQuotaClient.fetchRemoteQuotas();
       if (remote && remote.length > 0) {
         snapshot.remoteModelQuotas = remote;
+
+        const tierSummaries = remote.filter((item) => item.includedModels !== undefined);
+        const summaries = tierSummaries.length > 0 ? tierSummaries : remote;
+        const primaryTier =
+          summaries.find((item) => item.tier === "Flash") ??
+          [...summaries].sort(
+            (firstSummary, secondSummary) =>
+              secondSummary.usedPercentage - firstSummary.usedPercentage,
+          )[0] ??
+          summaries[0];
+
+        if (primaryTier) {
+          if (primaryTier.limit !== undefined) {
+            snapshot.requests.rpd.limit = primaryTier.limit;
+            snapshot.requests.rpd.remaining =
+              primaryTier.remainingAmount ??
+              Math.max(0, primaryTier.limit - snapshot.requests.rpd.used);
+            snapshot.requests.rpd.hasExplicitLimit = true;
+          } else if (process.env.GEMINI_RPD_LIMIT) {
+            snapshot.requests.rpd.hasExplicitLimit = true;
+          } else {
+            snapshot.requests.rpd.hasExplicitLimit = false;
+          }
+
+          if (primaryTier.resetsIn) {
+            snapshot.requests.rpd.resetsIn = primaryTier.resetsIn;
+          }
+          if (primaryTier.resetTime) {
+            snapshot.requests.rpd.resetTime = primaryTier.resetTime;
+          }
+
+          const allExhausted =
+            summaries.length > 0 && summaries.every((summary) => summary.remainingFraction <= 0);
+
+          if (this.genericQuotaExceeded) {
+            snapshot.status = "rate_limited";
+          } else if (allExhausted) {
+            snapshot.status = "rate_limited";
+          } else if (this.proQuotaExceeded) {
+            snapshot.status = "pro_quota_exceeded";
+          } else {
+            snapshot.status = "healthy";
+          }
+        }
       }
     } catch {
       // ignore

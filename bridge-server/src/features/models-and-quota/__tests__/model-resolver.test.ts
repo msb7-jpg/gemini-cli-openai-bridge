@@ -42,6 +42,8 @@ describe("model-resolver", () => {
     expect(resolveModelId("gemini-2.5-pro")).toBe("gemini-2.5-pro");
     expect(resolveModelId("gemini-2.5-flash")).toBe("gemini-2.5-flash");
     expect(resolveModelId("gemini-2.5-flash-lite")).toBe("gemini-2.5-flash-lite");
+    expect(resolveModelId("gemini-3.1-pro-preview")).toBe("gemini-3.1-pro-preview");
+    expect(resolveModelId("gemini-3-pro-preview")).toBe("gemini-3-pro-preview");
   });
 
   it("should provide complete list of supported models in SUPPORTED_MODELS", () => {
@@ -54,5 +56,32 @@ describe("model-resolver", () => {
     expect(ids).toContain("gemini-2.5-flash-lite");
     expect(ids).toContain("gemini-3-flash-preview");
     expect(ids).toContain("gemini-3-pro-preview");
+    expect(ids).toContain("gemini-3.1-pro-preview");
+  });
+
+  it("should configure 2M context for Pro models and 1M context for Flash models", () => {
+    const proIds = ["gemini-2.5-pro", "gemini-3-pro-preview", "gemini-3.1-pro-preview"];
+    const flashIds = [
+      "gemini-3.8-flash",
+      "gemini-3.5-flash",
+      "gemini-3.1-flash-lite",
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-3-flash-preview",
+    ];
+
+    for (const modelId of proIds) {
+      const model = SUPPORTED_MODELS.find((entry) => entry.id === modelId);
+      expect(model).toBeDefined();
+      expect(model?.context_length).toBe(2097152);
+      expect(model?.max_output_tokens).toBe(65536);
+    }
+
+    for (const modelId of flashIds) {
+      const model = SUPPORTED_MODELS.find((entry) => entry.id === modelId);
+      expect(model).toBeDefined();
+      expect(model?.context_length).toBe(1048576);
+      expect(model?.max_output_tokens).toBe(65536);
+    }
   });
 });

@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { QuotaTracker } from "../quota-tracker.service.js";
+import { remoteQuotaClient, type RemoteModelQuota } from "../remote-quota.client.js";
 import {
   QuotaSnapshotSchema,
   TokenUsageSchema,
@@ -17,6 +18,10 @@ describe("QuotaTracker & Quota Schemas", () => {
 
   beforeEach(() => {
     tracker = new QuotaTracker({ authType: "oauth", rpmLimit: 60, rpdLimit: 1000 });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("tracks requests and computes remaining RPM and RPD", () => {
@@ -146,5 +151,148 @@ describe("QuotaTracker & Quota Schemas", () => {
     expect(modelsResponse.object).toBe("list");
     expect(modelsResponse.data).toHaveLength(1);
     expect(modelsResponse.data[0].id).toBe("gemini-2.5-flash");
+  });
+});
+
+describe("QuotaTracker Remote Quota Integration", () => {
+  let tracker: QuotaTracker;
+
+  beforeEach(() => {
+    tracker = new QuotaTracker({ authType: "oauth", rpmLimit: 60, rpdLimit: 1000 });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("getSnapshotAsync enriches RPD limit and remaining from remote quotas when available", async () => {
+    tracker.recordRequestStart();
+    tracker.recordRequestStart();
+
+    const mockRemoteQuotas: RemoteModelQuota[] = [
+      {
+        modelId: "flash",
+        name: "Flash",
+        tier: "Flash",
+        tokenType: "REQUESTS",
+        remainingFraction: 0.95,
+        remainingPercentage: 95,
+        usedPercentage: 5,
+        limit: 2000,
+        remainingAmount: 1900,
+        resetsIn: "12h 30m",
+        resetTime: "2026-11-12T08:00:00Z",
+        includedModels: ["gemini-2.5-flash"],
+      },
+    ];
+
+    vi.spyOn(remoteQuotaClient, "fetchRemoteQuotas").mockResolvedValue(mockRemoteQuotas);
+
+    const snapshot = await tracker.getSnapshotAsync();
+    expect(snapshot.requests.rpd.used).toBe(2);
+    expect(snapshot.requests.rpd.limit).toBe(2000);
+    expect(snapshot.requests.rpd.remaining).toBe(1900);
+    expect(snapshot.requests.rpd.resetsIn).toBe("12h 30m");
+    expect(snapshot.requests.rpd.resetTime).toBe("2026-11-12T08:00:00Z");
+    expect(snapshot.status).toBe("healthy");
+  });
+
+  it("getSnapshotAsync sets hasExplicitLimit to false when remote limit is undefined and no env limit", async () => {
+    for (let count = 0; count < 10; count++) {
+      tracker.recordRequestStart();
+    }
+
+    const mockRemoteQuotas: RemoteModelQuota[] = [
+      {
+        modelId: "flash",
+        name: "Flash",
+        tier: "Flash",
+        tokenType: "REQUESTS",
+        remainingFraction: 0.8,
+        remainingPercentage: 80,
+        usedPercentage: 20,
+        includedModels: ["gemini-2.5-flash"],
+      },
+    ];
+
+    vi.spyOn(remoteQuotaClient, "fetchRemoteQuotas").mockResolvedValue(mockRemoteQuotas);
+
+    const snapshot = await tracker.getSnapshotAsync();
+    expect(snapshot.requests.rpd.hasExplicitLimit).toBe(false);
+    expect(snapshot.requests.rpd.used).toBe(10);
+  });
+
+  it("getSnapshotAsync respects process.env.GEMINI_RPD_LIMIT when set", async () => {
+    process.env.GEMINI_RPD_LIMIT = "2500";
+    try {
+      vi.spyOn(remoteQuotaClient, "fetchRemoteQuotas").mockResolvedValue([
+        {
+          modelId: "flash",
+          name: "Flash",
+          tier: "Flash",
+          tokenType: "REQUESTS",
+          usedPercentage: 0,
+          remainingPercentage: 100,
+          remainingFraction: 1.0,
+          resetTime: "2026-11-12T00:00:00Z",
+          includedModels: ["gemini-2.5-flash"],
+        },
+      ]);
+
+      const snapshot = await tracker.getSnapshotAsync();
+      expect(snapshot.requests.rpd.hasExplicitLimit).toBe(true);
+    } finally {
+      delete process.env.GEMINI_RPD_LIMIT;
+    }
+  });
+
+  it("status stays healthy when remote quota has capacity, even if request count > 1000", async () => {
+    // Inject > 1000 requests into requestTimestamps
+    const now = Date.now();
+    for (let count = 0; count < 1200; count++) {
+      // spread over last 12 hours so RPM is not exceeded (rpmLimit is 60)
+      tracker["requestTimestamps"].push(now - 1000 * 60 - count * 10000);
+    }
+
+    // getSnapshot() status is not rate_limited just because rpdUsed >= 1000
+    const synchronousSnapshot = tracker.getSnapshot();
+    expect(synchronousSnapshot.requests.rpd.used).toBeGreaterThanOrEqual(1200);
+    expect(synchronousSnapshot.status).toBe("healthy");
+
+    // getSnapshotAsync() with capacity also remains healthy
+    const mockRemoteQuotas: RemoteModelQuota[] = [
+      {
+        modelId: "flash",
+        name: "Flash",
+        tier: "Flash",
+        tokenType: "REQUESTS",
+        remainingFraction: 0.5,
+        remainingPercentage: 50,
+        usedPercentage: 50,
+        includedModels: ["gemini-2.5-flash"],
+      },
+    ];
+    vi.spyOn(remoteQuotaClient, "fetchRemoteQuotas").mockResolvedValue(mockRemoteQuotas);
+
+    const asynchronousSnapshot = await tracker.getSnapshotAsync();
+    expect(asynchronousSnapshot.status).toBe("healthy");
+
+    // When remote quota is exhausted across all tiers, status becomes rate_limited
+    const exhaustedRemoteQuotas: RemoteModelQuota[] = [
+      {
+        modelId: "flash",
+        name: "Flash",
+        tier: "Flash",
+        tokenType: "REQUESTS",
+        remainingFraction: 0,
+        remainingPercentage: 0,
+        usedPercentage: 100,
+        includedModels: ["gemini-2.5-flash"],
+      },
+    ];
+    vi.spyOn(remoteQuotaClient, "fetchRemoteQuotas").mockResolvedValue(exhaustedRemoteQuotas);
+
+    const exhaustedSnapshot = await tracker.getSnapshotAsync();
+    expect(exhaustedSnapshot.status).toBe("rate_limited");
   });
 });

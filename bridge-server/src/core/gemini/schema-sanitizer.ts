@@ -29,6 +29,14 @@ const ALLOWED_GEMINI_SCHEMA_KEYS = new Set([
   "default",
 ]);
 
+export interface SanitizeGeminiSchemaOptions {
+  /**
+   * Whether the schema is the root parameters object of a function declaration.
+   * If true, defaults missing type to "object" instead of "string".
+   */
+  isRootParameters?: boolean;
+}
+
 function extractNumericBounds(schemaObj: Record<string, unknown>): {
   minimum: unknown;
   maximum: unknown;
@@ -77,17 +85,25 @@ function mergeAllOfBranches(schemaObj: Record<string, unknown>): {
 }
 
 function normalizeTypeAndEnumFields(newSchema: Record<string, unknown>): void {
-  if (Array.isArray(newSchema.type)) {
+  if (typeof newSchema.type === "string") {
+    newSchema.type = newSchema.type.toLowerCase();
+    if (newSchema.type === "null") {
+      newSchema.nullable = true;
+      newSchema.type = "string";
+    }
+  } else if (Array.isArray(newSchema.type)) {
     if (newSchema.type.includes("null")) {
       newSchema.nullable = true;
       const nonNullType = newSchema.type.find((typeItem: unknown) => typeItem !== "null");
-      if (nonNullType) {
-        newSchema.type = nonNullType;
+      if (typeof nonNullType === "string") {
+        newSchema.type = nonNullType.toLowerCase();
       } else {
-        delete newSchema.type;
+        newSchema.type = "string";
       }
-    } else if (newSchema.type.length > 0) {
-      newSchema.type = newSchema.type[0];
+    } else if (newSchema.type.length > 0 && typeof newSchema.type[0] === "string") {
+      newSchema.type = (newSchema.type[0] as string).toLowerCase();
+    } else {
+      delete newSchema.type;
     }
   }
 
@@ -109,20 +125,149 @@ function normalizeTypeAndEnumFields(newSchema: Record<string, unknown>): void {
   }
 }
 
+function isNullTypeBranch(branch: unknown): boolean {
+  if (branch === null || typeof branch !== "object") {
+    return false;
+  }
+  const branchObj = branch as Record<string, unknown>;
+  if (branchObj.type === "null") {
+    return true;
+  }
+  if (Array.isArray(branchObj.type)) {
+    const typeArray = branchObj.type as unknown[];
+    return typeArray.length === 1 && typeArray[0] === "null";
+  }
+  return false;
+}
+
+function inferTypeFromValues(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? "integer" : "number";
+  }
+  if (typeof value === "string") {
+    return "string";
+  }
+  if (Array.isArray(value)) {
+    return "array";
+  }
+  if (typeof value === "object") {
+    return "object";
+  }
+  return undefined;
+}
+
+function inferSchemaType(
+  newSchema: Record<string, unknown>,
+  schemaObj: Record<string, unknown>,
+  isRootParameters: boolean,
+): string | undefined {
+  if (typeof newSchema.type === "string" && newSchema.type.length > 0) {
+    return newSchema.type;
+  }
+
+  if (isRootParameters) {
+    return "object";
+  }
+
+  if (
+    newSchema.properties !== undefined ||
+    newSchema.required !== undefined ||
+    newSchema.minProperties !== undefined ||
+    newSchema.maxProperties !== undefined ||
+    schemaObj.properties !== undefined ||
+    schemaObj.required !== undefined
+  ) {
+    return "object";
+  }
+
+  if (
+    newSchema.items !== undefined ||
+    newSchema.minItems !== undefined ||
+    newSchema.maxItems !== undefined ||
+    schemaObj.items !== undefined
+  ) {
+    return "array";
+  }
+
+  if (
+    newSchema.enum !== undefined ||
+    newSchema.minLength !== undefined ||
+    newSchema.maxLength !== undefined ||
+    newSchema.pattern !== undefined ||
+    newSchema.format !== undefined ||
+    schemaObj.enum !== undefined ||
+    schemaObj.const !== undefined
+  ) {
+    return "string";
+  }
+
+  if (
+    newSchema.minimum !== undefined ||
+    newSchema.maximum !== undefined ||
+    schemaObj.minimum !== undefined ||
+    schemaObj.maximum !== undefined ||
+    schemaObj.exclusiveMinimum !== undefined ||
+    schemaObj.exclusiveMaximum !== undefined ||
+    schemaObj.multipleOf !== undefined
+  ) {
+    return "number";
+  }
+
+  const defaultType = inferTypeFromValues(newSchema.default ?? schemaObj.default);
+  if (defaultType) {
+    return defaultType;
+  }
+
+  const exampleType = inferTypeFromValues(newSchema.example ?? schemaObj.example);
+  if (exampleType) {
+    return exampleType;
+  }
+
+  if (Array.isArray(newSchema.anyOf) && newSchema.anyOf.length > 0) {
+    const branchTypes = new Set<string>();
+    for (const branch of newSchema.anyOf) {
+      if (
+        typeof branch === "object" &&
+        branch !== null &&
+        typeof (branch as Record<string, unknown>).type === "string"
+      ) {
+        branchTypes.add(((branch as Record<string, unknown>).type as string).toLowerCase());
+      }
+    }
+    if (branchTypes.size === 1) {
+      return Array.from(branchTypes)[0];
+    }
+    return undefined;
+  }
+
+  return "string";
+}
+
 /**
  * Recursively removes fields from a JSON schema that are not supported by the
  * Gemini API and maps common JSON Schema / OpenAPI 3.1 constructs to Gemini Schema.
+ * Ensures all schema objects specify a valid `type` field.
  *
  * @param schema - The raw JSON schema object or value to sanitize.
+ * @param options - Optional sanitization options such as root parameter handling.
  * @returns A sanitized schema object without unsupported keywords.
  */
-export function sanitizeGeminiSchema(schema: unknown): unknown {
+export function sanitizeGeminiSchema(
+  schema: unknown,
+  options?: SanitizeGeminiSchemaOptions,
+): unknown {
   if (typeof schema !== "object" || schema === null) {
     return schema;
   }
 
   if (Array.isArray(schema)) {
-    return schema.map(sanitizeGeminiSchema);
+    return schema.map((item: unknown) => sanitizeGeminiSchema(item));
   }
 
   const schemaObj = schema as Record<string, unknown>;
@@ -131,9 +276,9 @@ export function sanitizeGeminiSchema(schema: unknown): unknown {
   const { minimum, maximum } = extractNumericBounds(schemaObj);
   const { mergedProperties, mergedRequired } = mergeAllOfBranches(schemaObj);
 
-  let anyOf = schemaObj.anyOf;
-  if (!anyOf && Array.isArray(schemaObj.oneOf)) {
-    anyOf = schemaObj.oneOf;
+  let rawAnyOf = schemaObj.anyOf;
+  if (!rawAnyOf && Array.isArray(schemaObj.oneOf)) {
+    rawAnyOf = schemaObj.oneOf;
   }
 
   let enumValues = schemaObj.enum;
@@ -159,11 +304,40 @@ export function sanitizeGeminiSchema(schema: unknown): unknown {
   if (maximum !== undefined) {
     newSchema.maximum = maximum;
   }
-  if (anyOf !== undefined) {
-    newSchema.anyOf = anyOf;
-  }
   if (enumValues !== undefined) {
     newSchema.enum = enumValues;
+  }
+
+  if (Array.isArray(rawAnyOf)) {
+    const nonNullBranches: unknown[] = [];
+    let hasNullBranch = false;
+    for (const branch of rawAnyOf) {
+      if (branch === null || isNullTypeBranch(branch)) {
+        hasNullBranch = true;
+      } else {
+        nonNullBranches.push(branch);
+      }
+    }
+
+    if (hasNullBranch) {
+      newSchema.nullable = true;
+    }
+
+    if (
+      hasNullBranch &&
+      nonNullBranches.length === 1 &&
+      typeof nonNullBranches[0] === "object" &&
+      nonNullBranches[0] !== null
+    ) {
+      const singleBranch = nonNullBranches[0] as Record<string, unknown>;
+      const sanitizedBranch = sanitizeGeminiSchema(singleBranch) as Record<string, unknown>;
+      Object.assign(newSchema, sanitizedBranch);
+      delete newSchema.anyOf;
+    } else if (nonNullBranches.length > 0) {
+      newSchema.anyOf = nonNullBranches;
+    } else {
+      delete newSchema.anyOf;
+    }
   }
 
   normalizeTypeAndEnumFields(newSchema);
@@ -179,14 +353,22 @@ export function sanitizeGeminiSchema(schema: unknown): unknown {
 
   if (newSchema.items) {
     if (Array.isArray(newSchema.items)) {
-      newSchema.items = newSchema.items.length > 0 ? sanitizeGeminiSchema(newSchema.items[0]) : {};
+      newSchema.items =
+        newSchema.items.length > 0 ? sanitizeGeminiSchema(newSchema.items[0]) : { type: "string" };
     } else {
       newSchema.items = sanitizeGeminiSchema(newSchema.items);
     }
   }
 
   if (Array.isArray(newSchema.anyOf)) {
-    newSchema.anyOf = newSchema.anyOf.map(sanitizeGeminiSchema);
+    newSchema.anyOf = newSchema.anyOf.map((branchItem: unknown) =>
+      sanitizeGeminiSchema(branchItem),
+    );
+  }
+
+  const inferredType = inferSchemaType(newSchema, schemaObj, Boolean(options?.isRootParameters));
+  if (inferredType !== undefined) {
+    newSchema.type = inferredType;
   }
 
   return newSchema;

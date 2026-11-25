@@ -136,6 +136,218 @@ describe("sanitizeGeminiSchema", () => {
   });
 });
 
+describe("sanitizeGeminiSchema - type inference and defaults", () => {
+  it("infers string type when enum is present without type (VS Code Copilot configureAutomation)", () => {
+    const input = {
+      type: "object",
+      properties: {
+        permissionLevel: {
+          description: "Permission level required for automation",
+          enum: ["read", "write", "admin"],
+        },
+      },
+    };
+
+    const sanitized = sanitizeGeminiSchema(input);
+    expect(sanitized).toEqual({
+      type: "object",
+      properties: {
+        permissionLevel: {
+          type: "string",
+          description: "Permission level required for automation",
+          enum: ["read", "write", "admin"],
+        },
+      },
+    });
+  });
+
+  it("defaults to string type when property only specifies description", () => {
+    const input = {
+      type: "object",
+      properties: {
+        targetBranch: {
+          description: "Target branch to merge into",
+        },
+      },
+    };
+
+    const sanitized = sanitizeGeminiSchema(input);
+    expect(sanitized).toEqual({
+      type: "object",
+      properties: {
+        targetBranch: {
+          type: "string",
+          description: "Target branch to merge into",
+        },
+      },
+    });
+  });
+
+  it("infers object type when properties is present without type", () => {
+    const input = {
+      properties: {
+        config: {
+          properties: {
+            retries: {
+              type: "integer",
+            },
+          },
+        },
+      },
+    };
+
+    const sanitized = sanitizeGeminiSchema(input);
+    expect(sanitized).toEqual({
+      type: "object",
+      properties: {
+        config: {
+          type: "object",
+          properties: {
+            retries: {
+              type: "integer",
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it("infers array type when items is present without type", () => {
+    const input = {
+      type: "object",
+      properties: {
+        tags: {
+          description: "Tags list",
+          items: {
+            description: "Single tag",
+          },
+        },
+      },
+    };
+
+    const sanitized = sanitizeGeminiSchema(input);
+    expect(sanitized).toEqual({
+      type: "object",
+      properties: {
+        tags: {
+          type: "array",
+          description: "Tags list",
+          items: {
+            type: "string",
+            description: "Single tag",
+          },
+        },
+      },
+    });
+  });
+
+  it("infers types from default values when type is omitted", () => {
+    const input = {
+      type: "object",
+      properties: {
+        enabled: {
+          default: true,
+        },
+        count: {
+          default: 5,
+        },
+        ratio: {
+          default: 2.5,
+        },
+        label: {
+          default: "default-label",
+        },
+      },
+    };
+
+    const sanitized = sanitizeGeminiSchema(input);
+    expect(sanitized).toEqual({
+      type: "object",
+      properties: {
+        enabled: {
+          type: "boolean",
+          default: true,
+        },
+        count: {
+          type: "integer",
+          default: 5,
+        },
+        ratio: {
+          type: "number",
+          default: 2.5,
+        },
+        label: {
+          type: "string",
+          default: "default-label",
+        },
+      },
+    });
+  });
+
+  it("infers number type from numeric bounds when type is omitted", () => {
+    const input = {
+      minimum: 0,
+      maximum: 100,
+    };
+
+    const sanitized = sanitizeGeminiSchema(input);
+    expect(sanitized).toEqual({
+      type: "number",
+      minimum: 0,
+      maximum: 100,
+    });
+  });
+
+  it("simplifies oneOf with null branch to nullable type", () => {
+    const input = {
+      description: "Optional user ID",
+      oneOf: [{ type: "string" }, { type: "null" }],
+    };
+
+    const sanitized = sanitizeGeminiSchema(input);
+    expect(sanitized).toEqual({
+      type: "string",
+      description: "Optional user ID",
+      nullable: true,
+    });
+  });
+
+  it("handles type: ['null'] by setting nullable: true and defaulting type to string", () => {
+    const input = {
+      type: ["null"],
+      description: "Null only field",
+    };
+
+    const sanitized = sanitizeGeminiSchema(input);
+    expect(sanitized).toEqual({
+      type: "string",
+      description: "Null only field",
+      nullable: true,
+    });
+  });
+
+  it("normalizes uppercase type to lowercase", () => {
+    const input = {
+      type: "STRING",
+      description: "Uppercase type test",
+    };
+
+    const sanitized = sanitizeGeminiSchema(input);
+    expect(sanitized).toEqual({
+      type: "string",
+      description: "Uppercase type test",
+    });
+  });
+
+  it("defaults to object for root parameters when isRootParameters option is set", () => {
+    const input = {};
+    const sanitized = sanitizeGeminiSchema(input, { isRootParameters: true });
+    expect(sanitized).toEqual({
+      type: "object",
+    });
+  });
+});
+
 describe("parseFunctionNameFromId", () => {
   it("parses name from standard bridge format call_{name}_{uuid}", () => {
     expect(parseFunctionNameFromId("call_read_file_4070a256-ff8e-4916-b8ef-bdae539958ee")).toBe(

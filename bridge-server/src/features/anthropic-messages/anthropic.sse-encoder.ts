@@ -32,6 +32,12 @@ export function createAnthropicSSEEncoder(model: string, debugMode = false): Pro
   let hasToolCalls = false;
   let totalOutputTokens = 0;
   let finalOutputTokens: number | null = null;
+  let latestUsage: {
+    promptTokens: number;
+    completionTokens: number;
+    cachedTokens: number;
+    totalTokens: number;
+  } | null = null;
 
   const createMessageStartFrame = (): string =>
     formatAnthropicEvent("message_start", {
@@ -155,12 +161,12 @@ export function createAnthropicSSEEncoder(model: string, debugMode = false): Pro
             const cached = chunk.data.cachedContentTokenCount || 0;
             const total = chunk.data.totalTokenCount || prompt + completion;
 
-            globalQuotaTracker.recordUsage(model, {
+            latestUsage = {
               promptTokens: prompt,
               completionTokens: completion,
               cachedTokens: cached,
               totalTokens: total,
-            });
+            };
 
             if (completion > 0) {
               finalOutputTokens = completion;
@@ -173,6 +179,9 @@ export function createAnthropicSSEEncoder(model: string, debugMode = false): Pro
     },
 
     flush(): string[] {
+      if (latestUsage) {
+        globalQuotaTracker.recordUsage(model, latestUsage);
+      }
       const frames: string[] = [];
 
       if (isFirst) {

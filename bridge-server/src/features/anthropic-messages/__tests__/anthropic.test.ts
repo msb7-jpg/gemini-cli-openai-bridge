@@ -4,13 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { AnthropicMessagesRequestSchema } from "../anthropic.schema.js";
 import {
   resolveAnthropicModel,
   mapAnthropicMessagesToCanonical,
   mapAnthropicToolsToCanonical,
 } from "../anthropic.mapper.js";
+import { createAnthropicSSEEncoder } from "../anthropic.sse-encoder.js";
+import { globalQuotaTracker } from "../../models-and-quota/quota-tracker.service.js";
 
 describe("Anthropic Messages Slice (Zod 4 Schemas & Direct Canonical Mapping)", () => {
   describe("resolveAnthropicModel", () => {
@@ -259,5 +261,45 @@ describe("Anthropic Messages Slice (Zod 4 Schemas & Direct Canonical Mapping)", 
         }),
       ).toThrow();
     });
+  });
+});
+
+describe("Anthropic SSE Encoder", () => {
+  it("records usage only once in flush and does not double-count intermediate usage events", () => {
+    const recordSpy = vi.spyOn(globalQuotaTracker, "recordUsage").mockImplementation(() => {});
+    const encoder = createAnthropicSSEEncoder("gemini-2.5-flash");
+
+    encoder.encodeEvent({
+      type: "usage",
+      data: {
+        promptTokenCount: 15,
+        candidatesTokenCount: 10,
+        totalTokenCount: 25,
+      },
+    });
+
+    encoder.encodeEvent({
+      type: "usage",
+      data: {
+        promptTokenCount: 15,
+        candidatesTokenCount: 45,
+        totalTokenCount: 60,
+      },
+    });
+
+    // Before flush, recordUsage must NOT have been called
+    expect(recordSpy).not.toHaveBeenCalled();
+
+    const frames = encoder.flush();
+    expect(recordSpy).toHaveBeenCalledTimes(1);
+    expect(recordSpy).toHaveBeenCalledWith("gemini-2.5-flash", {
+      promptTokens: 15,
+      completionTokens: 45,
+      cachedTokens: 0,
+      totalTokens: 60,
+    });
+    expect(frames.some((frame) => frame.includes("message_stop"))).toBe(true);
+
+    recordSpy.mockRestore();
   });
 });

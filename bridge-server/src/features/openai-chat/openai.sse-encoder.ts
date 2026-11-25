@@ -55,6 +55,12 @@ export function createOpenAISSEEncoder(model: string, debugMode = false): Protoc
   let isFirstChunk = true;
   let toolCallIndex = 0;
   let usageData: OpenAIChunk["usage"] = null;
+  let latestUsage: {
+    promptTokens: number;
+    completionTokens: number;
+    cachedTokens: number;
+    totalTokens: number;
+  } | null = null;
 
   const formatChunkFrame = (
     delta: OpenAIDelta,
@@ -152,12 +158,12 @@ export function createOpenAISSEEncoder(model: string, debugMode = false): Protoc
             const cached = chunk.data.cachedContentTokenCount || 0;
             const total = chunk.data.totalTokenCount || prompt + completion;
 
-            globalQuotaTracker.recordUsage(model, {
+            latestUsage = {
               promptTokens: prompt,
               completionTokens: completion,
               cachedTokens: cached,
               totalTokens: total,
-            });
+            };
 
             usageData = {
               prompt_tokens: prompt,
@@ -172,6 +178,9 @@ export function createOpenAISSEEncoder(model: string, debugMode = false): Protoc
     },
 
     flush(): string[] {
+      if (latestUsage) {
+        globalQuotaTracker.recordUsage(model, latestUsage);
+      }
       const finishReason = toolCallIndex > 0 ? "tool_calls" : "stop";
       return [formatChunkFrame({}, finishReason, usageData), "data: [DONE]\n\n"];
     },

@@ -63,6 +63,14 @@ export async function registerOpenAIRoutes(
       const canonicalRequest = mapOpenAIRequestToCanonical(body, resolvedModel);
       const canonicalStream = await client.sendCanonicalStream(canonicalRequest);
 
+      const routingDecision = client.getLastRoutingDecision();
+      if (routingDecision) {
+        reply.header("x-bridge-routed-model", routingDecision.targetModel);
+        reply.header("x-bridge-routing-tier", routingDecision.tier);
+        reply.header("x-bridge-routing-reason", routingDecision.reason);
+        reply.header("x-bridge-routing-latency-ms", routingDecision.latencyMs.toString());
+      }
+
       if (isStream) {
         const encoder = createOpenAISSEEncoder(body.model, debugMode);
         await pipeCanonicalStreamToSSE(req, reply, canonicalStream, encoder);

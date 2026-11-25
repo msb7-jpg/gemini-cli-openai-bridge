@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   OpenAIChatCompletionRequestSchema,
   OpenAIMessageSchema,
@@ -12,6 +12,8 @@ import {
 } from "../openai.schema.js";
 import { mapOpenAIMessagesToCanonical } from "../openai.mapper.js";
 import { normalizeCanonicalMessagesToGemini } from "../../../core/gemini/message-normalizer.js";
+import { createOpenAISSEEncoder } from "../openai.sse-encoder.js";
+import { globalQuotaTracker } from "../../models-and-quota/quota-tracker.service.js";
 
 describe("OpenAI Chat Slice (Zod 4 Schemas & Canonical Mapping)", () => {
   it("validates a minimal valid OpenAI chat completion request", () => {
@@ -171,5 +173,43 @@ describe("OpenAI Chat Slice (Zod 4 Schemas & Canonical Mapping)", () => {
     expect(contents).toHaveLength(1);
     expect(contents[0].role).toBe("user");
     expect(contents[0].parts).toEqual([{ text: "First message" }, { text: "Second message" }]);
+  });
+
+  it("SSE encoder records usage only once in flush and does not double-count intermediate usage events", () => {
+    const recordSpy = vi.spyOn(globalQuotaTracker, "recordUsage").mockImplementation(() => {});
+    const encoder = createOpenAISSEEncoder("gemini-2.5-flash");
+
+    encoder.encodeEvent({
+      type: "usage",
+      data: {
+        promptTokenCount: 10,
+        candidatesTokenCount: 5,
+        totalTokenCount: 15,
+      },
+    });
+
+    encoder.encodeEvent({
+      type: "usage",
+      data: {
+        promptTokenCount: 10,
+        candidatesTokenCount: 20,
+        totalTokenCount: 30,
+      },
+    });
+
+    // Before flush, recordUsage must NOT have been called
+    expect(recordSpy).not.toHaveBeenCalled();
+
+    const frames = encoder.flush();
+    expect(recordSpy).toHaveBeenCalledTimes(1);
+    expect(recordSpy).toHaveBeenCalledWith("gemini-2.5-flash", {
+      promptTokens: 10,
+      completionTokens: 20,
+      cachedTokens: 0,
+      totalTokens: 30,
+    });
+    expect(frames.some((frame) => frame.includes("[DONE]"))).toBe(true);
+
+    recordSpy.mockRestore();
   });
 });

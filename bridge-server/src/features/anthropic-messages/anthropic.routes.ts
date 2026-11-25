@@ -69,6 +69,14 @@ export async function registerAnthropicRoutes(
       const canonicalRequest = mapAnthropicRequestToCanonical(body, targetModel);
       const canonicalStream = await client.sendCanonicalStream(canonicalRequest);
 
+      const routingDecision = client.getLastRoutingDecision();
+      if (routingDecision) {
+        reply.header("x-bridge-routed-model", routingDecision.targetModel);
+        reply.header("x-bridge-routing-tier", routingDecision.tier);
+        reply.header("x-bridge-routing-reason", routingDecision.reason);
+        reply.header("x-bridge-routing-latency-ms", routingDecision.latencyMs.toString());
+      }
+
       if (isStream) {
         const encoder = createAnthropicSSEEncoder(responseModel, debugMode);
         await pipeCanonicalStreamToSSE(req, reply, canonicalStream, encoder);
